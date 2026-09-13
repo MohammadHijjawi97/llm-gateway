@@ -94,7 +94,8 @@ describe('telemetry', () => {
     expect(urlFlagOf(['--url', 'http://a', '--url', 'http://b'])).toBe('http://b');
     expect(urlFlagOf(['--url', '--yes'])).toBeUndefined();
     expect(urlFlagOf(['--url'])).toBeUndefined();
-    expect(urlFlagOf(['--url='])).toBeUndefined();
+    expect(urlFlagOf(['--url='])).toBe('');
+    expect(telemetryTarget(makeIo(), '')).toBe('self-hosted');
     expect(urlFlagOf(['--url', 'http://a', '--url'])).toBe('http://a');
   });
 

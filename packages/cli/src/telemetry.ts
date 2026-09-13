@@ -73,7 +73,9 @@ export function urlFlagOf(argv: readonly string[]): string | undefined {
         value = next;
         i++;
       }
-    } else if (arg.startsWith('--url=') && arg.length > '--url='.length) {
+    } else if (arg.startsWith('--url=')) {
+      // A bare `--url=` is an empty value, as parseArgs records it; the command
+      // then fails resolution, and here an unparsable URL classifies as not Cloud.
       value = arg.slice('--url='.length);
     }
   }
