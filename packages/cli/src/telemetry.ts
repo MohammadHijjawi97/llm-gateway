@@ -16,6 +16,8 @@ export const FLUSH_AT_EVENTS = 200;
 /** Hard cap on what is kept between flushes; oldest events are dropped first. */
 export const MAX_SPOOL_EVENTS = 500;
 const SEND_TIMEOUT_MS = 1500;
+/** A lock older than this belongs to a process that died mid-flush; reclaim it. */
+export const LOCK_STALE_MS = 60 * 1000;
 
 export interface CliUsageEvent {
   command: string;
@@ -80,6 +82,49 @@ function statePath(io: CliIo): string {
   return path.join(telemetryDir(io), 'telemetry-state.json');
 }
 
+function lockPath(io: CliIo): string {
+  return path.join(telemetryDir(io), 'telemetry.lock');
+}
+
+/**
+ * Per-install mutex around read-modify-write of the spool and the flush, so
+ * two `mnfst` processes finishing together cannot both pass the due check and
+ * send the day's batch twice, or interleave spool rewrites. `wx` makes the
+ * create-or-fail atomic; a stale lock (crash mid-flush) is reclaimed.
+ */
+function acquireLock(io: CliIo, now: number): boolean {
+  const file = lockPath(io);
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
+      fs.closeSync(fs.openSync(file, 'wx', 0o600));
+      return true;
+    } catch {
+      let stale = false;
+      try {
+        stale = now - fs.statSync(file).mtimeMs > LOCK_STALE_MS;
+      } catch {
+        return false; // unreadable: neither ours nor safely reclaimable
+      }
+      if (!stale) return false;
+      try {
+        fs.unlinkSync(file);
+      } catch {
+        return false;
+      }
+    }
+  }
+  return false;
+}
+
+function releaseLock(io: CliIo): void {
+  try {
+    fs.unlinkSync(lockPath(io));
+  } catch {
+    /* already gone */
+  }
+}
+
 function readSpool(io: CliIo): CliUsageEvent[] {
   try {
     return fs
@@ -99,11 +144,24 @@ function readSpool(io: CliIo): CliUsageEvent[] {
   }
 }
 
+/**
+ * Full rewrite through a temp file + rename, so a crash or a full disk mid-write
+ * leaves the previous spool intact instead of a truncated one.
+ */
 function writeSpool(io: CliIo, events: CliUsageEvent[]): void {
   const file = spoolPath(io);
+  const tmp = `${file}.${process.pid}.tmp`;
   fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
-  fs.writeFileSync(file, events.map((e) => JSON.stringify(e) + '\n').join(''), { mode: 0o600 });
-  fs.chmodSync(file, 0o600);
+  fs.writeFileSync(tmp, events.map((e) => JSON.stringify(e) + '\n').join(''), { mode: 0o600 });
+  fs.chmodSync(tmp, 0o600);
+  fs.renameSync(tmp, file);
+}
+
+/** Lock-free fallback for a concurrent run: one small append, no rewrite, no flush. */
+function appendSpool(io: CliIo, event: CliUsageEvent): void {
+  const file = spoolPath(io);
+  fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
+  fs.appendFileSync(file, JSON.stringify(event) + '\n', { mode: 0o600 });
 }
 
 function readState(io: CliIo): FlushState {
@@ -147,20 +205,34 @@ export async function reportUsage(
     at: new Date(now).toISOString().slice(0, 16) + ':00.000Z',
     ...(runtime ? { agent_runtime: runtime.id } : {}),
   };
-  let spool: CliUsageEvent[];
-  try {
-    spool = [...readSpool(io), event].slice(-MAX_SPOOL_EVENTS);
-    writeSpool(io, spool);
-  } catch {
-    return; // unwritable config dir: no spool, no send — telemetry stays invisible
+  if (!acquireLock(io, now)) {
+    // Another mnfst is mid-flush (or the dir is unwritable): just record the
+    // event; the holder — or the next command — ships it.
+    try {
+      appendSpool(io, event);
+    } catch {
+      /* unwritable config dir: no spool, no send — telemetry stays invisible */
+    }
+    return;
   }
+  try {
+    let spool: CliUsageEvent[];
+    try {
+      spool = [...readSpool(io), event].slice(-MAX_SPOOL_EVENTS);
+      writeSpool(io, spool);
+    } catch {
+      return; // unwritable config dir: no spool, no send — telemetry stays invisible
+    }
 
-  const state = readState(io);
-  const due =
-    msSince(state.last_flush_at, now) >= FLUSH_INTERVAL_MS || spool.length >= FLUSH_AT_EVENTS;
-  const backingOff = msSince(state.last_attempt_at, now) < RETRY_BACKOFF_MS;
-  if (!due || backingOff) return;
-  await flush(io, spool, state, now);
+    const state = readState(io);
+    const due =
+      msSince(state.last_flush_at, now) >= FLUSH_INTERVAL_MS || spool.length >= FLUSH_AT_EVENTS;
+    const backingOff = msSince(state.last_attempt_at, now) < RETRY_BACKOFF_MS;
+    if (!due || backingOff) return;
+    await flush(io, spool, state, now);
+  } finally {
+    releaseLock(io);
+  }
 }
 
 async function flush(io: CliIo, events: CliUsageEvent[], state: FlushState, now: number) {

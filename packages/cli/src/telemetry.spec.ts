@@ -4,6 +4,7 @@ import {
   DEFAULT_TELEMETRY_ENDPOINT,
   FLUSH_AT_EVENTS,
   FLUSH_INTERVAL_MS,
+  LOCK_STALE_MS,
   MAX_SPOOL_EVENTS,
   RETRY_BACKOFF_MS,
   reportUsage,
@@ -226,6 +227,85 @@ describe('telemetry', () => {
     fs.writeFileSync(path.join(io.configDir, 'manifest'), '');
     await expect(reportUsage(io, 'whoami', true, 1)).resolves.toBeUndefined();
     expect(calls).toHaveLength(0);
+  });
+
+  it('a concurrent run holding the lock only appends; the holder ships the batch', async () => {
+    const calls: Call[] = [];
+    const io = on({}, capturing(calls));
+    const lock = path.join(io.configDir, 'manifest', 'telemetry.lock');
+    fs.mkdirSync(path.dirname(lock), { recursive: true });
+    fs.writeFileSync(lock, ''); // fresh: another mnfst is mid-flush
+
+    await reportUsage(io, 'whoami', true, 1); // first run → would flush, but not while locked
+
+    expect(calls).toHaveLength(0);
+    expect(spoolLines(io)).toHaveLength(1);
+    expect(fs.existsSync(lock)).toBe(true); // not ours to release
+  });
+
+  it('reclaims a stale lock left by a crashed run, then releases its own', async () => {
+    const calls: Call[] = [];
+    const io = on({}, capturing(calls));
+    const lock = path.join(io.configDir, 'manifest', 'telemetry.lock');
+    fs.mkdirSync(path.dirname(lock), { recursive: true });
+    fs.writeFileSync(lock, '');
+    const old = (Date.now() - LOCK_STALE_MS - 5_000) / 1000;
+    fs.utimesSync(lock, old, old);
+
+    await reportUsage(io, 'whoami', true, 1);
+
+    expect(calls).toHaveLength(1);
+    expect(fs.existsSync(lock)).toBe(false);
+    // Rewrites go through a temp file + rename: nothing half-written is left behind.
+    expect(fs.readdirSync(path.dirname(lock)).filter((f) => f.endsWith('.tmp'))).toEqual([]);
+  });
+
+  it('gives up on a lock it can neither take nor inspect', async () => {
+    const calls: Call[] = [];
+    const io = on({}, capturing(calls));
+    // A directory in the lock's place: `wx` fails, stat says "not stale", unlink fails.
+    const lock = path.join(io.configDir, 'manifest', 'telemetry.lock');
+    fs.mkdirSync(path.join(lock, 'child'), { recursive: true }); // unlink will fail (not a file)
+    const old = (Date.now() - LOCK_STALE_MS - 5_000) / 1000;
+    fs.utimesSync(lock, old, old); // after the child: creating it would bump mtime
+
+    await reportUsage(io, 'whoami', true, 1);
+
+    expect(calls).toHaveLength(0);
+    expect(spoolLines(io)).toHaveLength(1);
+  });
+
+  it('gives up after reclaiming a stale lock twice (a racer keeps re-taking it)', async () => {
+    const calls: Call[] = [];
+    const io = on({}, capturing(calls));
+    const open = jest.spyOn(fs, 'openSync').mockImplementation(() => {
+      throw Object.assign(new Error('EEXIST'), { code: 'EEXIST' });
+    });
+    const stat = jest
+      .spyOn(fs, 'statSync')
+      .mockReturnValue({ mtimeMs: Date.now() - LOCK_STALE_MS - 5_000 } as fs.Stats);
+    const unlink = jest.spyOn(fs, 'unlinkSync').mockImplementation(() => undefined);
+    try {
+      await reportUsage(io, 'whoami', true, 1);
+    } finally {
+      open.mockRestore();
+      stat.mockRestore();
+      unlink.mockRestore();
+    }
+    expect(calls).toHaveLength(0);
+    expect(spoolLines(io)).toHaveLength(1);
+  });
+
+  it('releases the lock and sends nothing when the spool cannot be rewritten', async () => {
+    const calls: Call[] = [];
+    const io = on({}, capturing(calls));
+    // A directory where the spool file should be: the rename over it fails.
+    fs.mkdirSync(spoolPath(io), { recursive: true });
+
+    await reportUsage(io, 'whoami', true, 1);
+
+    expect(calls).toHaveLength(0);
+    expect(fs.existsSync(path.join(io.configDir, 'manifest', 'telemetry.lock'))).toBe(false);
   });
 
   it('treats an unparsable state file and a non-object spool line as empty', async () => {
