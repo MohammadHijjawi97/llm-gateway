@@ -260,10 +260,11 @@ describe('telemetry', () => {
     expect(fs.readdirSync(path.dirname(lock)).filter((f) => f.endsWith('.tmp'))).toEqual([]);
   });
 
-  it('gives up on a lock it can neither take nor inspect', async () => {
+  it('gives up on a stale lock it cannot reclaim (unlink fails)', async () => {
     const calls: Call[] = [];
     const io = on({}, capturing(calls));
-    // A directory in the lock's place: `wx` fails, stat says "not stale", unlink fails.
+    // A non-empty directory in the lock's place with an old mtime: `wx` fails,
+    // the stale check passes, and the reclaiming unlink throws.
     const lock = path.join(io.configDir, 'manifest', 'telemetry.lock');
     fs.mkdirSync(path.join(lock, 'child'), { recursive: true }); // unlink will fail (not a file)
     const old = (Date.now() - LOCK_STALE_MS - 5_000) / 1000;
@@ -273,6 +274,22 @@ describe('telemetry', () => {
 
     expect(calls).toHaveLength(0);
     expect(spoolLines(io)).toHaveLength(1);
+  });
+
+  it('never removes a lock that a successor reclaimed while it was paused', async () => {
+    // Slow endpoint: while this run is mid-flush, simulate a reclaim by a
+    // successor that overwrote the lock with its own token.
+    let lock = '';
+    const io = on({}, (async () => {
+      fs.writeFileSync(lock, 'successor-token');
+      return new Response('{}', { status: 202 });
+    }) as typeof fetch);
+    lock = path.join(io.configDir, 'manifest', 'telemetry.lock');
+
+    await reportUsage(io, 'whoami', true, 1);
+
+    // Our release saw a foreign token and left the file alone.
+    expect(fs.readFileSync(lock, 'utf8')).toBe('successor-token');
   });
 
   it('releases the lock and sends nothing when the spool cannot be rewritten', async () => {

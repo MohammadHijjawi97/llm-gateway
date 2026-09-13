@@ -92,23 +92,32 @@ function lockPath(io: CliIo): string {
  * send the day's batch twice, or interleave spool rewrites. `wx` makes the
  * create-or-fail atomic; a stale lock (crash mid-flush) is reclaimed.
  */
-function acquireLock(io: CliIo, now: number): boolean {
+/**
+ * Returns an ownership token on success, null when another run holds the
+ * lock. The token is written into the lock file and checked again on release,
+ * so a holder that was paused past the stale window (and whose lock was
+ * reclaimed) can no longer delete the new owner's lock on its way out. Two
+ * flushes in that pathological case are harmless: the ingest rejects a second
+ * batch from the same install within minutes.
+ */
+function acquireLock(io: CliIo, now: number): string | null {
   const file = lockPath(io);
-  if (tryCreateLock(file)) return true;
-  if (!isStaleLock(file, now)) return false;
+  const token = randomUUID();
+  if (tryCreateLock(file, token)) return token;
+  if (!isStaleLock(file, now)) return null;
   try {
     fs.unlinkSync(file);
   } catch {
-    return false; // not a plain file, or gone already: not ours to reclaim
+    return null; // not a plain file, or gone already: not ours to reclaim
   }
   // A racer may re-take it between the unlink and this create; then it is theirs.
-  return tryCreateLock(file);
+  return tryCreateLock(file, token) ? token : null;
 }
 
-function tryCreateLock(file: string): boolean {
+function tryCreateLock(file: string, token: string): boolean {
   try {
     fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
-    fs.closeSync(fs.openSync(file, 'wx', 0o600));
+    fs.writeFileSync(file, token, { flag: 'wx', mode: 0o600 });
     return true;
   } catch {
     return false;
@@ -123,9 +132,11 @@ function isStaleLock(file: string, now: number): boolean {
   }
 }
 
-function releaseLock(io: CliIo): void {
+/** Remove the lock only while it still carries our token — never a successor's. */
+function releaseLock(io: CliIo, token: string): void {
+  const file = lockPath(io);
   try {
-    fs.unlinkSync(lockPath(io));
+    if (fs.readFileSync(file, 'utf8') === token) fs.unlinkSync(file);
   } catch {
     /* already gone */
   }
@@ -211,7 +222,8 @@ export async function reportUsage(
     at: new Date(now).toISOString().slice(0, 16) + ':00.000Z',
     ...(runtime ? { agent_runtime: runtime.id } : {}),
   };
-  if (!acquireLock(io, now)) {
+  const token = acquireLock(io, now);
+  if (token === null) {
     // Another mnfst is mid-flush (or the dir is unwritable): just record the
     // event; the holder — or the next command — ships it.
     try {
@@ -237,7 +249,7 @@ export async function reportUsage(
     if (!due || backingOff) return;
     await flush(io, spool, state, now);
   } finally {
-    releaseLock(io);
+    releaseLock(io, token);
   }
 }
 
