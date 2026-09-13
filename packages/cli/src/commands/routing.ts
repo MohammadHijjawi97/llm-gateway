@@ -6,7 +6,7 @@ import { CliError } from '../errors';
 import { parseArgs, parseBooleanFlag, requirePositional, requireString, requireYes } from '../args';
 import { ApiClient } from '../client';
 import { assertModelsDiscovered } from './model-check';
-import { VERSION } from '../version';
+import { CLI_USER_AGENT } from '../version';
 
 const URL_ONLY = { strings: ['url'] } as const;
 
@@ -393,7 +393,7 @@ export async function routingTest(io: CliIo, argv: string[]): Promise<number | v
         // Node's fetch sends `User-Agent: node` by default, which makes a CLI
         // test request indistinguishable from any other Node caller in the
         // gateway's caller_attribution. Same value ApiClient sends.
-        'User-Agent': `mnfst-cli/${VERSION}`,
+        'User-Agent': CLI_USER_AGENT,
         ...(surface === 'messages' ? { 'anthropic-version': '2023-06-01' } : {}),
         ...(args.strings['tier'] ? { 'x-manifest-tier': args.strings['tier'] } : {}),
       },
