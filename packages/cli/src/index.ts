@@ -157,7 +157,8 @@ Run (key injection, 1Password-style)
 Environment: MANIFEST_URL, MANIFEST_API_KEY (overrides stored login)
 Telemetry: anonymous, batched — commands are spooled locally and sent once a day
 in one request: a persistent anonymous install id (a random UUID stored at
-~/.config/manifest/telemetry-id), command names, CLI version, ok, duration, and os.
+~/.config/manifest/telemetry-id), command names, CLI version, ok, duration, os, and
+whether the install targets Cloud or a self-hosted server (never the URL).
 Never arguments, agent names, URLs, or keys.
 Disable with MANIFEST_TELEMETRY_DISABLED=1. Details: packages/cli/README.md.
 Credentials are stored per-host in ~/.config/manifest/config.json (mode 0600).`;

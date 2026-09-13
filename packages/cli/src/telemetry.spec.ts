@@ -10,6 +10,7 @@ import {
   reportUsage,
   spoolPath,
   telemetryAnonId,
+  telemetryTarget,
 } from './telemetry';
 import { makeIo, type TestIo } from '../test/helpers';
 
@@ -47,6 +48,31 @@ function readState(io: TestIo): Record<string, string> {
 }
 
 describe('telemetry', () => {
+  it('classifies the target as cloud or self-hosted, never as a URL', () => {
+    // Fresh install, nothing configured: the CLI defaults to Cloud.
+    expect(telemetryTarget(makeIo())).toBe('cloud');
+    expect(telemetryTarget(makeIo({ env: { MANIFEST_URL: 'https://APP.manifest.build/' } }))).toBe(
+      'cloud',
+    );
+    expect(telemetryTarget(makeIo({ env: { MANIFEST_URL: 'http://localhost:3001' } }))).toBe(
+      'self-hosted',
+    );
+    // The active config host counts when no env override is set.
+    const configured = makeIo();
+    fs.mkdirSync(path.join(configured.configDir, 'manifest'), { recursive: true });
+    fs.writeFileSync(
+      path.join(configured.configDir, 'manifest', 'config.json'),
+      JSON.stringify({ activeHost: 'https://manifest.acme.internal', hosts: {} }),
+    );
+    expect(telemetryTarget(configured)).toBe('self-hosted');
+    // A corrupt config falls through to the default; a bad URL is not Cloud.
+    const corrupt = makeIo();
+    fs.mkdirSync(path.join(corrupt.configDir, 'manifest'), { recursive: true });
+    fs.writeFileSync(path.join(corrupt.configDir, 'manifest', 'config.json'), '{not json');
+    expect(telemetryTarget(corrupt)).toBe('cloud');
+    expect(telemetryTarget(makeIo({ env: { MANIFEST_URL: 'not a url' } }))).toBe('self-hosted');
+  });
+
   it('mints a persistent anon id (0600) and reuses it', () => {
     const io = makeIo();
     const first = telemetryAnonId(io);
@@ -68,6 +94,7 @@ describe('telemetry', () => {
       anon_id: expect.stringMatching(/^[0-9a-f-]{36}$/),
       cli_version: expect.any(String),
       os: expect.any(String),
+      target: 'cloud',
       events: [
         {
           command: 'agent create',

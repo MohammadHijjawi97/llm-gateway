@@ -2,7 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { randomUUID } from 'crypto';
 import { CliIo } from './context';
-import { configFilePath } from './config';
+import { DEFAULT_URL, configFilePath, loadConfig, normalizeOrigin } from './config';
 import { VERSION } from './version';
 import { detectAgentRuntime } from './agent-runtime';
 
@@ -26,6 +26,29 @@ export interface CliUsageEvent {
   /** ISO-8601 UTC, minute precision — enough for "commands per day". */
   at: string;
   agent_runtime?: string;
+}
+
+export type TelemetryTarget = 'cloud' | 'self-hosted';
+
+/**
+ * Which class of Manifest this install points at — Cloud or a self-hosted
+ * server — never the URL itself. Same precedence as command resolution
+ * (MANIFEST_URL, then the active config host, then Cloud). A corrupt config
+ * falls through to that default; an unparsable URL is not Cloud.
+ */
+export function telemetryTarget(io: CliIo): TelemetryTarget {
+  let activeHost: string | undefined;
+  try {
+    activeHost = loadConfig(configFilePath(io.env)).activeHost;
+  } catch {
+    /* corrupt config: the login command reports it; here it just means "default" */
+  }
+  try {
+    const origin = normalizeOrigin(io.env['MANIFEST_URL'] ?? activeHost ?? DEFAULT_URL);
+    return origin === normalizeOrigin(DEFAULT_URL) ? 'cloud' : 'self-hosted';
+  } catch {
+    return 'self-hosted';
+  }
 }
 
 interface FlushState {
@@ -267,6 +290,7 @@ async function flush(io: CliIo, events: CliUsageEvent[], state: FlushState, now:
         anon_id: telemetryAnonId(io),
         cli_version: VERSION,
         os: ['darwin', 'linux', 'win32'].includes(process.platform) ? process.platform : 'other',
+        target: telemetryTarget(io),
         events,
       }),
       signal: controller.signal,
