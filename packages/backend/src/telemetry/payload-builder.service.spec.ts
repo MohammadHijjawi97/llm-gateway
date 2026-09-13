@@ -1,6 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
-import { DataSource } from 'typeorm';
 import { Agent } from '../entities/agent.entity';
 import { ApiKey } from '../entities/api-key.entity';
 import { AgentMessage } from '../entities/agent-message.entity';
@@ -135,17 +134,18 @@ async function makeServiceWithRepo(partial: Partial<MockData>): Promise<MakeServ
   const requestsRepo = {
     createQueryBuilder: jest.fn(() => makeQb(requestsQueue.shift()!)),
   };
+  // The OAuth tables have no entity, so the builder goes through the api_keys
+  // repository's entity manager. Two statements: the scalar counts (no GROUP BY)
+  // and the per-name rollup.
   const apiKeysRepo = {
     createQueryBuilder: jest.fn(() => makeQb({ row: data.cliKeys, mode: 'getRawOne' })),
-  };
-  // The OAuth tables have no entity, so the builder goes through DataSource.query.
-  // Two statements: the scalar counts (no GROUP BY) and the per-name rollup.
-  const dataSource = {
-    query: jest.fn((sql: string) => {
-      if (data.mcpQueryError) return Promise.reject(data.mcpQueryError);
-      if (sql.includes('GROUP BY')) return Promise.resolve(data.mcpNames);
-      return Promise.resolve(data.mcpCounts ? [data.mcpCounts] : []);
-    }),
+    manager: {
+      query: jest.fn((sql: string) => {
+        if (data.mcpQueryError) return Promise.reject(data.mcpQueryError);
+        if (sql.includes('GROUP BY')) return Promise.resolve(data.mcpNames);
+        return Promise.resolve(data.mcpCounts ? [data.mcpCounts] : []);
+      }),
+    },
   };
 
   const module: TestingModule = await Test.createTestingModule({
@@ -155,7 +155,6 @@ async function makeServiceWithRepo(partial: Partial<MockData>): Promise<MakeServ
       { provide: getRepositoryToken(Agent), useValue: agentsRepoMock },
       { provide: getRepositoryToken(ManifestRequest), useValue: requestsRepo },
       { provide: getRepositoryToken(ApiKey), useValue: apiKeysRepo },
-      { provide: DataSource, useValue: dataSource },
     ],
   }).compile();
 
@@ -584,6 +583,8 @@ describe('PayloadBuilderService', () => {
           { name: 'cursor', count: '1' },
           { name: "Guillaume's laptop agent", count: '1' },
           { name: 'https://internal.example.com/tool', count: '1' },
+          // Declared but empty: a name we decline to forward, not a missing one.
+          { name: '', count: '1' },
           { name: null, count: '1' },
         ],
       });
@@ -593,7 +594,7 @@ describe('PayloadBuilderService', () => {
       expect(payload.mcp_clients_by_name).toEqual({
         'claude-code': 2,
         cursor: 1,
-        other: 2,
+        other: 3,
         unknown: 1,
       });
     });

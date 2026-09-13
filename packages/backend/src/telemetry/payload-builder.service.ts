@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, Repository } from 'typeorm';
+import { Repository } from 'typeorm';
 import { ALL_TIERS, AUTH_TYPES, ERROR_CLASSES, TIER_SLOTS } from 'manifest-shared';
 import { PROVIDER_BY_ID_OR_ALIAS } from '../common/constants/providers';
 import { Agent } from '../entities/agent.entity';
@@ -102,7 +102,6 @@ export class PayloadBuilderService {
     private readonly requests: Repository<ManifestRequest>,
     @InjectRepository(ApiKey)
     private readonly apiKeys: Repository<ApiKey>,
-    private readonly dataSource: DataSource,
   ) {}
 
   async build(installId: string, manifestVersion: string): Promise<TelemetryPayloadV1> {
@@ -285,7 +284,9 @@ export class PayloadBuilderService {
   /**
    * Remote-MCP adoption, read from the OAuth tables the Better Auth MCP plugin
    * owns (`oauthClient`, `oauthConsent`, `oauthAccessToken`). They have no
-   * TypeORM entity, so this is raw SQL. Access tokens live 15 minutes and a
+   * TypeORM entity, so this is raw SQL through the api_keys repository's
+   * entity manager — the same connection, one fewer injected dependency.
+   * Access tokens live 15 minutes and a
    * connected client refreshes them for as long as it is in use, so tokens
    * minted per 24h is the activity proxy — no per-tool-call counter exists.
    *
@@ -303,7 +304,7 @@ export class PayloadBuilderService {
     };
     try {
       const [countRows, nameRows] = await Promise.all([
-        this.dataSource.query<McpCountsRow[]>(`
+        this.apiKeys.manager.query<McpCountsRow[]>(`
           SELECT
             (SELECT COUNT(*) FROM "oauthClient" WHERE "disabled" IS NOT TRUE) AS clients,
             (SELECT COUNT(*) FROM "oauthConsent") AS consents,
@@ -312,7 +313,7 @@ export class PayloadBuilderService {
             (SELECT COUNT(DISTINCT "clientId") FROM "oauthAccessToken"
               WHERE "createdAt" >= NOW() - INTERVAL '24 hours') AS active_clients
         `),
-        this.dataSource.query<McpClientNameRow[]>(`
+        this.apiKeys.manager.query<McpClientNameRow[]>(`
           SELECT "name" AS name, COUNT(*) AS count
           FROM "oauthClient"
           WHERE "disabled" IS NOT TRUE
@@ -323,7 +324,9 @@ export class PayloadBuilderService {
       if (!counts) return empty;
       const byName: Record<string, number> = {};
       for (const row of nameRows) {
-        const slug = row.name ? slugifyClientName(row.name) : null;
+        // Only a NULL name is `unknown`; an empty or unrecognised declared name
+        // is a name we chose not to forward, i.e. `other`.
+        const slug = row.name === null ? null : slugifyClientName(row.name);
         const key =
           slug === null ? 'unknown' : MCP_CLIENT_NAME_WHITELIST.has(slug) ? slug : 'other';
         byName[key] = (byName[key] ?? 0) + Number(row.count);
