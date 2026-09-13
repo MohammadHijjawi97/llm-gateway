@@ -26,17 +26,23 @@ export interface CliUsageEvent {
   /** ISO-8601 UTC, minute precision — enough for "commands per day". */
   at: string;
   agent_runtime?: string;
+  /**
+   * Spool-only: the Manifest class this command targeted, resolved at record
+   * time so a `--url` flag counts. Hoisted to the envelope at flush and
+   * stripped from the wire events.
+   */
+  target?: TelemetryTarget;
 }
 
 export type TelemetryTarget = 'cloud' | 'self-hosted';
 
 /**
- * Which class of Manifest this install points at — Cloud or a self-hosted
- * server — never the URL itself. Same precedence as command resolution
- * (MANIFEST_URL, then the active config host, then Cloud). A corrupt config
+ * Which class of Manifest a command targets — Cloud or a self-hosted server —
+ * never the URL itself. Same precedence as command resolution (`--url`, then
+ * MANIFEST_URL, then the active config host, then Cloud). A corrupt config
  * falls through to that default; an unparsable URL is not Cloud.
  */
-export function telemetryTarget(io: CliIo): TelemetryTarget {
+export function telemetryTarget(io: CliIo, flagUrl?: string): TelemetryTarget {
   let activeHost: string | undefined;
   try {
     activeHost = loadConfig(configFilePath(io.env)).activeHost;
@@ -44,11 +50,22 @@ export function telemetryTarget(io: CliIo): TelemetryTarget {
     /* corrupt config: the login command reports it; here it just means "default" */
   }
   try {
-    const origin = normalizeOrigin(io.env['MANIFEST_URL'] ?? activeHost ?? DEFAULT_URL);
+    const origin = normalizeOrigin(flagUrl ?? io.env['MANIFEST_URL'] ?? activeHost ?? DEFAULT_URL);
     return origin === normalizeOrigin(DEFAULT_URL) ? 'cloud' : 'self-hosted';
   } catch {
     return 'self-hosted';
   }
+}
+
+/** The value of a `--url <x>` / `--url=<x>` flag anywhere in a command's argv. */
+export function urlFlagOf(argv: readonly string[]): string | undefined {
+  for (let i = 0; i < argv.length; i++) {
+    const arg = argv[i];
+    if (arg === '--') return undefined; // everything after is the child command (mnfst run)
+    if (arg === '--url') return argv[i + 1];
+    if (arg.startsWith('--url=')) return arg.slice('--url='.length);
+  }
+  return undefined;
 }
 
 interface FlushState {
@@ -231,6 +248,7 @@ export async function reportUsage(
   command: string,
   ok: boolean,
   durationMs: number,
+  flagUrl?: string,
 ): Promise<void> {
   if (telemetryDisabled(io)) return;
   const now = Date.now();
@@ -244,6 +262,7 @@ export async function reportUsage(
     duration_ms: Math.max(0, Math.min(600_000, Math.round(durationMs))),
     at: new Date(now).toISOString().slice(0, 16) + ':00.000Z',
     ...(runtime ? { agent_runtime: runtime.id } : {}),
+    target: telemetryTarget(io, flagUrl),
   };
   const token = acquireLock(io, now);
   if (token === null) {
@@ -290,8 +309,11 @@ async function flush(io: CliIo, events: CliUsageEvent[], state: FlushState, now:
         anon_id: telemetryAnonId(io),
         cli_version: VERSION,
         os: ['darwin', 'linux', 'win32'].includes(process.platform) ? process.platform : 'other',
-        target: telemetryTarget(io),
-        events,
+        // One class per batch (the ingest contract): the most recent command's.
+        // A spool written before the field shipped falls back to the current
+        // resolution.
+        target: events[events.length - 1]?.target ?? telemetryTarget(io),
+        events: events.map(({ target: _target, ...wire }) => wire),
       }),
       signal: controller.signal,
     });
