@@ -57,15 +57,27 @@ export function telemetryTarget(io: CliIo, flagUrl?: string): TelemetryTarget {
   }
 }
 
-/** The value of a `--url <x>` / `--url=<x>` flag anywhere in a command's argv. */
+/**
+ * The value of a `--url <x>` / `--url=<x>` flag in a command's argv, resolved
+ * the way parseArgs does: the last occurrence wins, and an occurrence with no
+ * value (or a flag where the value should be) does not count.
+ */
 export function urlFlagOf(argv: readonly string[]): string | undefined {
+  let value: string | undefined;
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
-    if (arg === '--') return undefined; // everything after is the child command (mnfst run)
-    if (arg === '--url') return argv[i + 1];
-    if (arg.startsWith('--url=')) return arg.slice('--url='.length);
+    if (arg === '--') break; // everything after is the child command (mnfst run)
+    if (arg === '--url') {
+      const next = argv[i + 1];
+      if (next !== undefined && !next.startsWith('--')) {
+        value = next;
+        i++;
+      }
+    } else if (arg.startsWith('--url=') && arg.length > '--url='.length) {
+      value = arg.slice('--url='.length);
+    }
   }
-  return undefined;
+  return value;
 }
 
 interface FlushState {
