@@ -29,6 +29,8 @@ interface CodexSession {
   promptCacheKey: string;
   turnState?: string;
   expiresAt: number;
+  /** Bumped on every replacement so a capture from a request that outlived its entry is ignored. */
+  incarnation: number;
 }
 
 export interface CodexAffinityRequest {
@@ -36,6 +38,8 @@ export interface CodexAffinityRequest {
   headers: Record<string, string>;
   /** Key under which `capture()` stores the response's turn-state token. */
   storeKey?: string;
+  /** Incarnation of the entry `prepare()` resolved; `capture()` ignores a stale one. */
+  incarnation?: number;
 }
 
 /**
@@ -81,6 +85,8 @@ export interface CodexAffinityRequest {
 @Injectable()
 export class CodexSessionAffinity {
   private readonly sessions = new Map<string, CodexSession>();
+  /** Monotonic so a replacement never reuses the incarnation of a swept or evicted entry. */
+  private nextIncarnation = 1;
   private lastCleanup = Date.now();
 
   /**
@@ -105,19 +111,23 @@ export class CodexSessionAffinity {
     };
     if (session.turnState) headers['x-codex-turn-state'] = session.turnState;
 
-    return { headers, storeKey };
+    return storeKey ? { headers, storeKey, incarnation: session.incarnation } : { headers };
   }
 
   /**
    * Store the response's sticky-routing token for the next request in this
    * session, or evict the stale one when the upstream rejected the request.
    */
-  capture(storeKey: string | undefined, response: Response): void {
+  capture(storeKey: string | undefined, response: Response, incarnation?: number): void {
     if (!storeKey) return;
     const session = this.sessions.get(storeKey);
     // The session can be gone when a request outlives the TTL; the next
     // prepare() starts a fresh one, so there is nothing to record here.
     if (!session) return;
+    // A request that outlived its entry (expired or evicted, then replaced
+    // under the same key) must not hand its token to the replacement: the
+    // ids match, but the token belongs to a turn the new entry never saw.
+    if (incarnation !== undefined && incarnation !== session.incarnation) return;
     if (!response.ok) {
       delete session.turnState;
       return;
@@ -145,6 +155,7 @@ export class CodexSessionAffinity {
       this.sessions.delete(oldest);
     }
     const session = this.createSession(callerCacheKey);
+    session.incarnation = this.nextIncarnation++;
     this.sessions.set(storeKey, session);
     return session;
   }
@@ -156,6 +167,7 @@ export class CodexSessionAffinity {
         threadId: randomUUID(),
         promptCacheKey: randomUUID(),
         expiresAt: Date.now() + SESSION_TTL_MS,
+        incarnation: 0,
       };
     }
     return {
@@ -163,6 +175,7 @@ export class CodexSessionAffinity {
       threadId: derivedUuid('thread-id', callerCacheKey),
       promptCacheKey: callerCacheKey,
       expiresAt: Date.now() + SESSION_TTL_MS,
+      incarnation: 0,
     };
   }
 
