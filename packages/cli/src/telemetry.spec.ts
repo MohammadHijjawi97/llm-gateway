@@ -90,6 +90,12 @@ describe('telemetry', () => {
       urlFlagOf(['--agent', 'a', '--', 'node', 'tool.js', '--url', 'http://child']),
     ).toBeUndefined();
     expect(urlFlagOf(['whoami'])).toBeUndefined();
+    // Mirrors parseArgs: the last occurrence wins; a missing or flag-like value does not count.
+    expect(urlFlagOf(['--url', 'http://a', '--url', 'http://b'])).toBe('http://b');
+    expect(urlFlagOf(['--url', '--yes'])).toBeUndefined();
+    expect(urlFlagOf(['--url'])).toBeUndefined();
+    expect(urlFlagOf(['--url='])).toBeUndefined();
+    expect(urlFlagOf(['--url', 'http://a', '--url'])).toBe('http://a');
   });
 
   it('tags the batch with the last command’s target and keeps the class off the wire events', async () => {
