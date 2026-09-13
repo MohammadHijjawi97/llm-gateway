@@ -94,27 +94,33 @@ function lockPath(io: CliIo): string {
  */
 function acquireLock(io: CliIo, now: number): boolean {
   const file = lockPath(io);
-  for (let attempt = 0; attempt < 2; attempt++) {
-    try {
-      fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
-      fs.closeSync(fs.openSync(file, 'wx', 0o600));
-      return true;
-    } catch {
-      let stale = false;
-      try {
-        stale = now - fs.statSync(file).mtimeMs > LOCK_STALE_MS;
-      } catch {
-        return false; // unreadable: neither ours nor safely reclaimable
-      }
-      if (!stale) return false;
-      try {
-        fs.unlinkSync(file);
-      } catch {
-        return false;
-      }
-    }
+  if (tryCreateLock(file)) return true;
+  if (!isStaleLock(file, now)) return false;
+  try {
+    fs.unlinkSync(file);
+  } catch {
+    return false; // not a plain file, or gone already: not ours to reclaim
   }
-  return false;
+  // A racer may re-take it between the unlink and this create; then it is theirs.
+  return tryCreateLock(file);
+}
+
+function tryCreateLock(file: string): boolean {
+  try {
+    fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 });
+    fs.closeSync(fs.openSync(file, 'wx', 0o600));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function isStaleLock(file: string, now: number): boolean {
+  try {
+    return now - fs.statSync(file).mtimeMs > LOCK_STALE_MS;
+  } catch {
+    return false; // unreadable: neither ours nor safely reclaimable
+  }
 }
 
 function releaseLock(io: CliIo): void {

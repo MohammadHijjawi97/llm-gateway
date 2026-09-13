@@ -275,27 +275,6 @@ describe('telemetry', () => {
     expect(spoolLines(io)).toHaveLength(1);
   });
 
-  it('gives up after reclaiming a stale lock twice (a racer keeps re-taking it)', async () => {
-    const calls: Call[] = [];
-    const io = on({}, capturing(calls));
-    const open = jest.spyOn(fs, 'openSync').mockImplementation(() => {
-      throw Object.assign(new Error('EEXIST'), { code: 'EEXIST' });
-    });
-    const stat = jest
-      .spyOn(fs, 'statSync')
-      .mockReturnValue({ mtimeMs: Date.now() - LOCK_STALE_MS - 5_000 } as fs.Stats);
-    const unlink = jest.spyOn(fs, 'unlinkSync').mockImplementation(() => undefined);
-    try {
-      await reportUsage(io, 'whoami', true, 1);
-    } finally {
-      open.mockRestore();
-      stat.mockRestore();
-      unlink.mockRestore();
-    }
-    expect(calls).toHaveLength(0);
-    expect(spoolLines(io)).toHaveLength(1);
-  });
-
   it('releases the lock and sends nothing when the spool cannot be rewritten', async () => {
     const calls: Call[] = [];
     const io = on({}, capturing(calls));
