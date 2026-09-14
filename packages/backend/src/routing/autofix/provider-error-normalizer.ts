@@ -5,7 +5,7 @@ import type { PhoenixProviderError } from './phoenix.types';
 const MAX_MESSAGE_LENGTH = 2000;
 
 function coerceString(value: unknown): string | null {
-  return typeof value === 'string' && value.length > 0 ? value : null;
+  return typeof value === 'string' && value.trim().length > 0 ? value : null;
 }
 
 /**

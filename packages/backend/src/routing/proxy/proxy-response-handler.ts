@@ -479,14 +479,17 @@ function attemptedFallbackEntries(
     });
 }
 
-/** Lead with the primary provider's own sentence, then summarize the whole chain. */
+/**
+ * Lead with the primary provider's own sentence, then list the chain. No count:
+ * a patched-then-failed hop is two provider attempts but one entry here.
+ */
 function exhaustedMessage(
   primaryMessage: string,
   attempts: Array<{ provider: string; model: string; status: number }>,
 ): string {
   const lead = /[.!?]$/.test(primaryMessage) ? primaryMessage : `${primaryMessage}.`;
   const list = attempts.map((a) => `${a.provider}/${a.model} ${a.status}`).join(', ');
-  return `${lead} All ${attempts.length} attempts failed: ${list}.`;
+  return `${lead} Every attempt failed: ${list}.`;
 }
 
 export function recordFallbackFailures(

@@ -158,6 +158,27 @@ describe('sanitizeProviderError', () => {
     ).toBe('Upstream provider rejected the request');
   });
 
+  it('keeps the generic message for whitespace-only detail or error strings outside production', () => {
+    expect(sanitizeProviderError(400, JSON.stringify({ detail: '   ' }), 'development')).toBe(
+      'Bad request to upstream provider',
+    );
+    expect(sanitizeProviderError(400, JSON.stringify({ error: ' \n ' }), 'development')).toBe(
+      'Bad request to upstream provider',
+    );
+    expect(
+      sanitizeProviderError(422, JSON.stringify({ detail: [{ msg: '  ' }] }), 'development'),
+    ).toBe('Upstream provider rejected the request');
+  });
+
+  it('keeps the generic message when the body parses to a non-object outside production', () => {
+    expect(sanitizeProviderError(400, '42', 'development')).toBe(
+      'Bad request to upstream provider',
+    );
+    expect(sanitizeProviderError(400, '["x"]', 'development')).toBe(
+      'Bad request to upstream provider',
+    );
+  });
+
   it('preserves a bare string error field in production', () => {
     // Ollama and several OpenAI-compatible servers return `{"error":"..."}`.
     const body = JSON.stringify({ error: 'model "llama9" not found, try pulling it first' });

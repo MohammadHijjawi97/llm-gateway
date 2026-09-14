@@ -3006,7 +3006,8 @@ describe('ProxyController', () => {
     });
 
     it('should forward provider error response and preserve content-type from provider', async () => {
-      const mockProviderResp = new Response('{"error":"bad gateway"}', {
+      // Plain text so the generic 5xx message is asserted independently of NODE_ENV.
+      const mockProviderResp = new Response('bad gateway', {
         status: 502,
         headers: { 'Content-Type': 'application/json' },
       });
@@ -3029,7 +3030,7 @@ describe('ProxyController', () => {
       expect(res.status).toHaveBeenCalledWith(502);
       expect(res.json).toHaveBeenCalledWith({
         error: expect.objectContaining({
-          message: 'bad gateway',
+          message: 'Upstream provider returned bad gateway',
           type: 'server_error',
           code: null,
           status: 502,

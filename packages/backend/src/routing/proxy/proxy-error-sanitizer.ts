@@ -70,12 +70,12 @@ function normalizeErrorMessage(message: string): string {
  * `error` envelope at all, so ignoring it drops the only useful sentence.
  */
 export function providerDetailMessage(detail: unknown): string | null {
-  if (typeof detail === 'string') return detail.length > 0 ? detail : null;
+  if (typeof detail === 'string') return detail.trim().length > 0 ? detail : null;
   if (!Array.isArray(detail)) return null;
   const messages = detail.flatMap((entry) => {
     const msg =
       entry && typeof entry === 'object' ? (entry as Record<string, unknown>).msg : undefined;
-    return typeof msg === 'string' && msg.length > 0 ? [msg] : [];
+    return typeof msg === 'string' && msg.trim().length > 0 ? [msg] : [];
   });
   return messages.length > 0 ? messages.join('; ') : null;
 }
@@ -99,7 +99,7 @@ function extractProviderMessage(rawBody: string): string | null {
     const parsed = JSON.parse(rawBody) as unknown;
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
     const message = providerMessageOf(parsed as Record<string, unknown>);
-    return typeof message === 'string' && message.length > 0 ? message : null;
+    return typeof message === 'string' && message.trim().length > 0 ? message : null;
   } catch {
     return null;
   }

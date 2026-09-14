@@ -955,7 +955,7 @@ describe('proxy-response-handler', () => {
 
       expect(error.message).toBe(
         "The 'gpt-5.4-mini' model is not supported when using Codex with a ChatGPT account. " +
-          'All 3 attempts failed: openai/gpt-5.4-mini 400, xai/grok-4.5 403, ' +
+          'Every attempt failed: openai/gpt-5.4-mini 400, xai/grok-4.5 403, ' +
           'gemini/gemini-3.1-flash-lite 403.',
       );
     });
@@ -1078,7 +1078,9 @@ describe('proxy-response-handler', () => {
           autofix: { applied: true, original_status: 400, retry_status: 422 },
         }),
       ]);
-      expect(error.message).toContain('All 3 attempts failed:');
+      expect(error.message).toContain(
+        'Every attempt failed: openai/gpt-5.4-mini 400, xai/grok-4.5 403, opencode-go/deepseek-flash 422.',
+      );
     });
   });
 

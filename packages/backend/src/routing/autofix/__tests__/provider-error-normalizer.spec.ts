@@ -40,6 +40,11 @@ describe('normalizeProviderError', () => {
     });
   });
 
+  it('treats a whitespace-only bare error string as absent and falls back to the raw body', () => {
+    const body = JSON.stringify({ error: '   ' });
+    expect(normalizeProviderError(body).message).toBe(body);
+  });
+
   it('reads message from a bare string error field', () => {
     expect(normalizeProviderError(JSON.stringify({ error: 'model not found' }))).toEqual({
       message: 'model not found',
