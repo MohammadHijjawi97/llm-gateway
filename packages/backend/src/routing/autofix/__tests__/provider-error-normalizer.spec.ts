@@ -27,6 +27,28 @@ describe('normalizeProviderError', () => {
     expect(result).toEqual({ message: 'm', type: null, param: null, code: null });
   });
 
+  it('reads message from a FastAPI-style {detail} body', () => {
+    const body = JSON.stringify({
+      detail: "The 'gpt-5.4-mini' model is not supported when using Codex with a ChatGPT account.",
+    });
+
+    expect(normalizeProviderError(body)).toEqual({
+      message: "The 'gpt-5.4-mini' model is not supported when using Codex with a ChatGPT account.",
+      type: null,
+      param: null,
+      code: null,
+    });
+  });
+
+  it('reads message from a bare string error field', () => {
+    expect(normalizeProviderError(JSON.stringify({ error: 'model not found' }))).toEqual({
+      message: 'model not found',
+      type: null,
+      param: null,
+      code: null,
+    });
+  });
+
   it('uses the raw body as the message for a non-JSON body', () => {
     const result = normalizeProviderError('boom');
 
