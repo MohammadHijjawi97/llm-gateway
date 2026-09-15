@@ -141,6 +141,17 @@ const QWEN_TOKEN_PLAN_RESPONSES_RE = /^qwen3\.7-max$/i;
 const COPILOT_CHAT_COMPLETIONS_ENDPOINT = '/chat/completions';
 const COPILOT_RESPONSES_ENDPOINTS = new Set(['/responses', 'ws:/responses']);
 
+/**
+ * Narrower than `isAnthropicHost` on purpose, and the two are meant to
+ * disagree for a custom provider row pointed at Anthropic.
+ *
+ * Forwarding a beta header the caller already chose is additive: the request
+ * either keeps working or starts working. Injecting a cache breakpoint edits
+ * the body, changes prompt-caching behaviour and moves what the tenant is
+ * billed. Extending that to custom-Anthropic endpoints is a real behaviour
+ * change for people who do not get it today, so it belongs in its own change
+ * with its own evidence, not folded into header forwarding.
+ */
 function shouldApplyAnthropicAutomaticCacheControl(endpointKey: string): boolean {
   return endpointKey === 'anthropic';
 }
