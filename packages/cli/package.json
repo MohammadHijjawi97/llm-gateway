@@ -39,8 +39,8 @@
     "provenance": true
   },
   "scripts": {
-    "build": "npm run gen && tsc -p tsconfig.build.json",
-    "typecheck": "tsc -p tsconfig.json",
+    "build": "rm -rf dist && npm run gen && tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "jest",
     "gen": "node scripts/generate-provider-catalog.cjs && node scripts/generate-skill-content.cjs",
     "set-version": "node scripts/set-version.cjs"
