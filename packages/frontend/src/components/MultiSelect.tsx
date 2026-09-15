@@ -45,7 +45,17 @@ const MultiSelect: Component<MultiSelectProps> = (props) => {
   };
 
   const handleClickOutside = (e: MouseEvent) => {
-    if (ref && !ref.contains(e.target as Node)) setOpen(false);
+    const target = e.target as Node;
+    // This runs after the option's own handler. When a caller derives its
+    // options from the selection — the Requests log's model filter does, so a
+    // picked model stays listed even if it leaves the range window — toggling
+    // rebuilds the option nodes and the clicked one is already detached by now.
+    // `contains` would call that "outside" and shut the menu after one pick, so
+    // a node that left the document mid-click is never treated as an outside
+    // click. Stopping propagation on the dropdown cannot do this job: Solid
+    // delegates onClick to its own document listener, not the element.
+    if (!target.isConnected) return;
+    if (ref && !ref.contains(target)) setOpen(false);
   };
   const handleKeyDown = (e: KeyboardEvent) => {
     if (e.key === 'Escape') setOpen(false);

@@ -114,3 +114,55 @@ describe('MultiSelect', () => {
     removeSpy.mockRestore();
   });
 });
+
+describe('MultiSelect with options derived from the selection', () => {
+  // The Requests log builds its model options from the selection itself (so a
+  // picked model stays listed even when it drops out of the range window).
+  // Toggling then rebuilds the option nodes, and the clicked node is already
+  // detached when the document-level outside-click handler runs — contains()
+  // says false and the menu used to close after a single pick.
+  function renderSelfDerivedMultiSelect() {
+    const [values, setValues] = createSignal<string[]>([]);
+    const options = () =>
+      [...new Set(['gpt-4o', 'claude-sonnet-4', ...values()])].sort().map((value) => ({
+        label: value,
+        value,
+      }));
+    return render(() => (
+      <MultiSelect
+        options={options()}
+        values={values()}
+        onChange={setValues}
+        placeholder="All models"
+        label="Model filter"
+      />
+    ));
+  }
+
+  it('stays open after picking an option when the options rebuild', async () => {
+    renderSelfDerivedMultiSelect();
+    await fireEvent.click(screen.getByRole('button', { name: 'Model filter' }));
+    expect(screen.getByRole('listbox')).toBeDefined();
+
+    await fireEvent.click(screen.getByRole('option', { name: /gpt-4o/ }));
+
+    await waitFor(() => {
+      expect(screen.getByRole('option', { name: /gpt-4o/ }).getAttribute('aria-selected')).toBe(
+        'true',
+      );
+    });
+    expect(screen.queryByRole('listbox')).not.toBeNull();
+  });
+
+  it('still closes on a click outside the dropdown', async () => {
+    renderSelfDerivedMultiSelect();
+    await fireEvent.click(screen.getByRole('button', { name: 'Model filter' }));
+    expect(screen.getByRole('listbox')).toBeDefined();
+
+    await fireEvent.click(document.body);
+
+    await waitFor(() => {
+      expect(screen.queryByRole('listbox')).toBeNull();
+    });
+  });
+});
