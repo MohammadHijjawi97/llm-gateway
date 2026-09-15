@@ -15,13 +15,18 @@ on:
   workflow_dispatch:
     inputs:
       dry_run:
-        description: 'Validate without publishing (runs npm publish --dry-run)'
+        description: 'Build and inspect the package without uploading'
         type: boolean
         default: false
 
 jobs:
   publish:
+    # workflow_dispatch accepts any ref and checkout honours it. Only main.
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
+    concurrency:
+      group: npm-publish-mnfst-gateway-cli
+      cancel-in-progress: false
     permissions:
       contents: read
       id-token: write # npm provenance attestation
@@ -47,8 +52,17 @@ jobs:
           VIEW_STATUS=$?
           set -e
           if [ "$VIEW_STATUS" -eq 0 ]; then
+            # Present on the registry is not the same as published by us. An
+            # unscoped name is global and first-come-first-served, so confirm the
+            # maintainer before reporting a green no-op.
+            OWNER=$(npm view "mnfst-gateway-cli@${VERSION}" maintainers --json 2>/dev/null | grep -c 'guillaumegay' || true)
+            if [ "$OWNER" = "0" ]; then
+              echo "mnfst-gateway-cli@${VERSION} exists but is not maintained by this account." >&2
+              echo "Refusing to report success for someone else's package." >&2
+              exit 1
+            fi
             echo "skip=true" >> "$GITHUB_OUTPUT"
-            echo "mnfst-gateway-cli@${VERSION} is already published; nothing to do."
+            echo "mnfst-gateway-cli@${VERSION} is already published by us; nothing to do."
           elif printf '%s' "$VIEW_OUTPUT" | grep -q 'E404'; then
             echo "skip=false" >> "$GITHUB_OUTPUT"
             echo "mnfst-gateway-cli@${VERSION} is not on npm yet."
@@ -65,8 +79,13 @@ jobs:
       - name: Publish
         if: steps.published.outputs.skip != 'true'
         # access + provenance come from publishConfig in packages/cli/package.json.
-        # --dry-run still runs npm's full pre-flight, including the provenance
-        # and access checks that rejected earlier attempts, without uploading.
+        #
+        # --dry-run builds and inspects the tarball. It does NOT contact the
+        # registry, so it cannot validate package creation rights, token scope,
+        # 2FA policy, name-similarity rejection, or provenance. Verified: with
+        # publishConfig.access removed — the exact config that failed the 6.25.1
+        # publish with EUSAGE — a dry run still exits 0. Never read a green dry
+        # run as evidence that the real publish will succeed.
         run: |
           if [ "${{ inputs.dry_run }}" = "true" ]; then
             npm publish --workspace=packages/cli --dry-run
