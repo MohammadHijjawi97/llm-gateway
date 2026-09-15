@@ -104,6 +104,10 @@ describe('MessagesQueryService filter options', () => {
     const clauses = requestQb.andWhere.mock.calls.map((call) => String(call[0]));
     expect(clauses.some((clause) => clause.includes('r.agent_id = ('))).toBe(true);
     expect(clauses.some((clause) => clause.includes('r.tenant_id = :blockedTenantId'))).toBe(true);
+    // The window comes from the caller's range, not the 90-day default: a
+    // regression that ignored params.range would otherwise pass every test here.
+    const cutoff = new Date(requestQb.where.mock.calls[0][1].cutoff as string).getTime();
+    expect(Date.now() - cutoff).toBeLessThan(25 * 60 * 60 * 1000);
   });
 
   it('defaults the blocked-model window when the caller gives no range', async () => {

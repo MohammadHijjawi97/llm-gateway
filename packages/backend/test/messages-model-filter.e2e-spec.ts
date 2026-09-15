@@ -130,8 +130,11 @@ describe('GET /api/v1/messages?model=', () => {
       .set('x-api-key', TEST_API_KEY)
       .expect(200);
 
-    expect(ids(res.body)).toEqual(expect.arrayContaining([betaRequestId, fallbackRequestId]));
-    expect(ids(res.body)).not.toContain(alphaRequestId);
+    // Exact: the rerouted request belongs here too (its one attempt ran on
+    // BETA), and an exact set is what pins the "any attempt" semantics.
+    expect(new Set(ids(res.body))).toEqual(
+      new Set([betaRequestId, fallbackRequestId, reroutedRequestId]),
+    );
   });
 
   it('accepts several models as a comma-separated list', async () => {

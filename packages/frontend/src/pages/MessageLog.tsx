@@ -279,6 +279,17 @@ const MessageLog: Component = () => {
   const [modelsFilter, setModelsFilterValue] = createSignal<string[]>(
     typeof searchParams.model === 'string' ? searchParams.model.split(',').filter(Boolean) : [],
   );
+  // Navigation can change ?model= while this page stays mounted, so the signal
+  // follows the URL the way status and range do — otherwise the log would keep
+  // querying the selection from before the navigation.
+  createEffect(
+    on(
+      () => searchParams.model,
+      (model) =>
+        setModelsFilterValue(typeof model === 'string' ? model.split(',').filter(Boolean) : []),
+      { defer: true },
+    ),
+  );
   const setModelsFilter = (values: string[]) => {
     setModelsFilterValue(values);
     setSearchParams({ model: values.length ? values.join(',') : undefined }, { replace: true });

@@ -94,9 +94,9 @@ describe('MessagesQueryService — cost filter edge cases', () => {
   };
 
   it('does not serve one model filter a total cached under another', async () => {
-    // getMessageCount() sends cache_total=true, so a count key that ignores the
-    // model list hands the new filter the previous filter's total for the whole
-    // TTL — pagination and the row list would then disagree.
+    // The log's count request comes in with cache_total=true, so a count key
+    // that ignores the model list hands the new filter the previous filter's
+    // total for the whole TTL — pagination and the row list would then disagree.
     mockGetRawOne.mockResolvedValue({ total: 7 });
     mockGetRawMany.mockResolvedValue([]);
 

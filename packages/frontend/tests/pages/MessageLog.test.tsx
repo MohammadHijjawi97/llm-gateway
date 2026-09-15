@@ -5,6 +5,7 @@ import { createSignal } from 'solid-js';
 let mockAgentName = 'test-agent';
 let mockSearchParams: Record<string, string | undefined> = {};
 let mockSearchAgentAccessor: (() => string | undefined) | null = null;
+let mockSearchModelAccessor: (() => string | undefined) | null = null;
 const mockSetSearchParams = vi.fn();
 const mockNavigate = vi.fn();
 const pingBox = vi.hoisted(() => ({ read: (): number => 0, set: (_value: number) => {} }));
@@ -23,6 +24,9 @@ vi.mock('@solidjs/router', () => ({
       },
       get range() {
         return mockSearchParams.range;
+      },
+      get model() {
+        return mockSearchModelAccessor ? mockSearchModelAccessor() : mockSearchParams.model;
       },
     },
     mockSetSearchParams,
@@ -321,6 +325,7 @@ describe('MessageLog', () => {
     mockAgentName = 'test-agent';
     mockSearchParams = {};
     mockSearchAgentAccessor = null;
+    mockSearchModelAccessor = null;
     mockGetAgents.mockResolvedValue({
       agents: [{ agent_name: 'agent-alpha' }, { agent_name: 'agent-beta' }],
     });
@@ -552,6 +557,46 @@ describe('MessageLog', () => {
     });
     const status = selectWithOption(container, 'All statuses');
     expect(status.textContent).toContain('Cancelled');
+
+    // The label alone proves nothing: the point of the change is that
+    // `cancelled` reaches the API as its own value rather than folding into
+    // `failed`, so assert what goes on the wire.
+    mockGetMessages.mockClear();
+    await fireEvent.change(status, { target: { value: 'cancelled' } });
+    await vi.waitFor(() => {
+      expect(mockGetMessages).toHaveBeenCalledWith(
+        expect.objectContaining({ status: 'cancelled' }),
+      );
+    });
+    expect(mockSetSearchParams).toHaveBeenCalledWith({ status: 'cancelled' }, { replace: true });
+
+    mockGetMessages.mockClear();
+    await fireEvent.change(status, { target: { value: 'failed' } });
+    await vi.waitFor(() => {
+      expect(mockGetMessages).toHaveBeenCalledWith(expect.objectContaining({ status: 'failed' }));
+    });
+  });
+
+  it('follows ?model= when navigation changes it after mount', async () => {
+    const [searchModel, setSearchModel] = createSignal<string | undefined>('gpt-4o');
+    mockSearchModelAccessor = searchModel;
+    mockGetMessageFilterOptions.mockResolvedValue({
+      providers: ['openai'],
+      models: ['gpt-4o', 'claude-3.5-sonnet'],
+    });
+    mockGetMessages.mockResolvedValue(messagesData);
+
+    const { container } = render(() => <MessageLog />);
+    await vi.waitFor(() => {
+      expect(container.textContent).toContain('msg-1234');
+    });
+
+    mockGetMessages.mockClear();
+    setSearchModel('claude-3.5-sonnet');
+    await vi.waitFor(() => {
+      const sent = mockGetMessages.mock.calls.map((call) => (call[0] as any)?.model);
+      expect(sent).toContain('claude-3.5-sonnet');
+    });
   });
 
   it('lists the tenant models from filter-options in a model filter', async () => {
