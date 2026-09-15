@@ -867,7 +867,12 @@
 
   .setup-method__code {
     max-width: 100%;
-    padding: 44px 12px 12px;
+    /* Reserve room for the copy button beside the text, not above it. The
+       button is 30px wide at right: 7px, so 46px clears it. Reserving a whole
+       44px row instead read as a blank first line in every snippet, which is
+       most of them on a phone: one short command that never reaches the
+       button. Text wraps (overflow-wrap: anywhere) so it cannot run under it. */
+    padding: 12px 46px 12px 12px;
     overflow-x: auto;
     overflow-wrap: anywhere;
     word-break: normal;
