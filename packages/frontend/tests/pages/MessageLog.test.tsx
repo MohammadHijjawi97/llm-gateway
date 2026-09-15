@@ -498,47 +498,6 @@ describe('MessageLog', () => {
     );
   });
 
-  it('debounces cost filter inputs', async () => {
-    vi.useFakeTimers();
-    mockGetMessages.mockResolvedValue(messagesData);
-    const { container } = render(() => <MessageLog />);
-    await vi.advanceTimersByTimeAsync(100);
-
-    const inputs = container.querySelectorAll('.cost-range-filter__input');
-    expect(inputs.length).toBe(2);
-
-    mockGetMessages.mockClear();
-
-    // Rapid typing should not fire immediately
-    fireEvent.input(inputs[0], { target: { value: '1' } });
-    fireEvent.input(inputs[0], { target: { value: '1.5' } });
-    expect(mockGetMessages).not.toHaveBeenCalled();
-
-    // After debounce window, the API call fires
-    await vi.advanceTimersByTimeAsync(500);
-    expect(mockGetMessages).toHaveBeenCalled();
-
-    vi.useRealTimers();
-  });
-
-  it('debounces cost max filter inputs', async () => {
-    vi.useFakeTimers();
-    mockGetMessages.mockResolvedValue(messagesData);
-    const { container } = render(() => <MessageLog />);
-    await vi.advanceTimersByTimeAsync(100);
-
-    const inputs = container.querySelectorAll('.cost-range-filter__input');
-    mockGetMessages.mockClear();
-
-    fireEvent.input(inputs[1], { target: { value: '10' } });
-    expect(mockGetMessages).not.toHaveBeenCalled();
-
-    await vi.advanceTimersByTimeAsync(500);
-    expect(mockGetMessages).toHaveBeenCalled();
-
-    vi.useRealTimers();
-  });
-
   it('shows the loading skeleton when filters change', async () => {
     mockGetMessages.mockResolvedValue(messagesData);
     const { container } = render(() => <MessageLog />);
@@ -574,12 +533,64 @@ describe('MessageLog', () => {
     expect(container.querySelectorAll('.skeleton').length).toBe(0);
   });
 
-  it('shows cost range filter inputs', async () => {
+  it('no longer offers the cost range inputs', async () => {
+    // Removed: filtering by an absolute dollar threshold requires already
+    // knowing the cost distribution you are trying to discover.
     mockGetMessages.mockResolvedValue(messagesData);
     const { container } = render(() => <MessageLog />);
     await vi.waitFor(() => {
-      const inputs = container.querySelectorAll('.cost-range-filter__input');
-      expect(inputs.length).toBe(2);
+      expect(container.textContent).toContain('msg-1234');
+    });
+    expect(container.querySelectorAll('.cost-range-filter__input').length).toBe(0);
+  });
+
+  it('offers Cancelled as its own status, distinct from Failed', async () => {
+    mockGetMessages.mockResolvedValue(messagesData);
+    const { container } = render(() => <MessageLog />);
+    await vi.waitFor(() => {
+      expect(container.textContent).toContain('msg-1234');
+    });
+    const status = selectWithOption(container, 'All statuses');
+    expect(status.textContent).toContain('Cancelled');
+  });
+
+  it('lists the tenant models from filter-options in a model filter', async () => {
+    mockGetMessageFilterOptions.mockResolvedValue({
+      providers: ['openai'],
+      models: ['gpt-4o', 'claude-3.5-sonnet'],
+    });
+    mockGetMessages.mockResolvedValue(messagesData);
+    const { container } = render(() => <MessageLog />);
+    await vi.waitFor(() => {
+      const filter = container.querySelector(
+        '[data-testid="multiselect"][aria-label="Model filter"]',
+      );
+      expect(filter?.textContent).toContain('gpt-4o');
+      expect(filter?.textContent).toContain('claude-3.5-sonnet');
+    });
+  });
+
+  it('requests messages narrowed to the selected model', async () => {
+    mockGetMessageFilterOptions.mockResolvedValue({
+      providers: ['openai'],
+      models: ['gpt-4o', 'claude-3.5-sonnet'],
+    });
+    mockGetMessages.mockResolvedValue(messagesData);
+    const { container } = render(() => <MessageLog />);
+    await vi.waitFor(() => {
+      expect(
+        container.querySelector('[data-testid="multiselect"][aria-label="Model filter"]'),
+      ).toBeTruthy();
+    });
+
+    const filter = container.querySelector(
+      '[data-testid="multiselect"][aria-label="Model filter"]',
+    ) as HTMLSelectElement;
+    fireEvent.change(filter, { target: { value: 'gpt-4o' } });
+
+    await vi.waitFor(() => {
+      const sentModels = mockGetMessages.mock.calls.map((call) => (call[0] as any)?.model);
+      expect(sentModels).toContain('gpt-4o');
     });
   });
 
@@ -717,6 +728,10 @@ describe('MessageLog', () => {
   });
 
   it('filters messages by attempt status (plain select, URL-synced)', async () => {
+    // Kept, not derivable: "has a failed attempt" is Status=Failed UNION
+    // Recovery!=none, and those two selects AND together, so no single choice
+    // spans it. The connection cards in GlobalOverview and ConnectionDetail
+    // deep-link here with ?attempts=, and would otherwise land unfiltered.
     mockGetMessages.mockResolvedValue(messagesData);
     const { container } = render(() => <MessageLog />);
     await vi.waitFor(() => {
