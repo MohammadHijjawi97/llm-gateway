@@ -1,5 +1,5 @@
 import { fireEvent, render, screen, waitFor } from '@solidjs/testing-library';
-import { createSignal } from 'solid-js';
+import { createSignal, Show } from 'solid-js';
 import { describe, expect, it, vi } from 'vitest';
 import MultiSelect from '../../src/components/MultiSelect';
 
@@ -152,6 +152,28 @@ describe('MultiSelect with options derived from the selection', () => {
       );
     });
     expect(screen.queryByRole('listbox')).not.toBeNull();
+  });
+
+  it('closes when an outside element removes itself on click', async () => {
+    // The detached-node guard must not swallow this: the click came from
+    // outside, it merely left no node behind to ask `contains` about.
+    const [present, setPresent] = createSignal(true);
+    render(() => (
+      <Show when={present()}>
+        <button data-testid="self-removing" onClick={() => setPresent(false)}>
+          dismiss
+        </button>
+      </Show>
+    ));
+    renderSelfDerivedMultiSelect();
+    await fireEvent.click(screen.getByRole('button', { name: 'Model filter' }));
+    expect(screen.getByRole('listbox')).toBeDefined();
+
+    await fireEvent.click(screen.getByTestId('self-removing'));
+
+    await waitFor(() => {
+      expect(screen.queryByRole('listbox')).toBeNull();
+    });
   });
 
   it('still closes on a click outside the dropdown', async () => {
