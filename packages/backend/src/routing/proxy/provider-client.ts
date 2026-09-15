@@ -11,6 +11,7 @@ import {
 import { validatePublicUrl } from '../../common/utils/url-validation';
 import { isSelfHosted } from '../../common/utils/detect-self-hosted';
 import { resolveSubscriptionEndpointKey } from './provider-hooks';
+import { mergeAnthropicBeta } from './anthropic-beta';
 import { injectOpenAiMessageCacheControl, injectOpenRouterCacheControl } from './cache-injection';
 import {
   applyAnthropicAutomaticCacheControl,
@@ -115,6 +116,20 @@ interface BuiltProviderRequest {
   headers: Record<string, string>;
   requestBody: Record<string, unknown>;
   structuredOutputToolName?: string;
+}
+
+/**
+ * Anthropic-format headers with the caller's beta flags folded in. Manifest's
+ * own flags always win their slot; the caller's are appended, so a request that
+ * sent none is byte-identical to before.
+ */
+function withClientAnthropicBeta(
+  headers: Record<string, string>,
+  clientAnthropicBeta: string | string[] | undefined,
+): Record<string, string> {
+  const merged = mergeAnthropicBeta(headers['anthropic-beta'], clientAnthropicBeta);
+  if (merged === undefined || merged === headers['anthropic-beta']) return headers;
+  return { ...headers, 'anthropic-beta': merged };
 }
 
 const parsedProviderTimeout = Number.parseInt(process.env.PROVIDER_TIMEOUT_MS ?? '', 10);
@@ -423,6 +438,7 @@ export class ProviderClient {
       signatureLookup: opts.signatureLookup,
       thinkingLookup: opts.thinkingLookup,
       thinkingRouteContext: opts.thinkingRouteContext,
+      clientAnthropicBeta: opts.clientAnthropicBeta,
       providerResource: opts.providerResource,
       sessionKey: opts.sessionKey,
       providerCacheKey: opts.providerCacheKey,
@@ -669,6 +685,7 @@ export class ProviderClient {
     signatureLookup?: ForwardOptions['signatureLookup'];
     thinkingLookup?: ForwardOptions['thinkingLookup'];
     thinkingRouteContext?: ForwardOptions['thinkingRouteContext'];
+    clientAnthropicBeta?: ForwardOptions['clientAnthropicBeta'];
     providerResource?: string;
     sessionKey?: string;
     providerCacheKey?: string;
@@ -742,7 +759,15 @@ export class ProviderClient {
       }
       return {
         url: `${endpoint.baseUrl}${endpoint.buildPath(bareModel)}`,
-        headers: endpoint.buildHeaders(apiKey, authType),
+        headers: withClientAnthropicBeta(
+          endpoint.buildHeaders(apiKey, authType),
+          // Anthropic itself only. The other `format: 'anthropic'` endpoints
+          // (Bedrock, BytePlus, CommandCode, MiniMax, Kimi, OpenCode Go) merely
+          // speak the Messages shape: they have never been sent an
+          // `anthropic-beta` header, and a flag naming an Anthropic-only
+          // feature is meaningless — or rejected — there.
+          endpointKey === 'anthropic' ? ctx.clientAnthropicBeta : undefined,
+        ),
         requestBody,
         structuredOutputToolName: syntheticToolName,
       };
