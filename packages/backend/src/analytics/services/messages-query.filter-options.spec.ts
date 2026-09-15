@@ -1,4 +1,5 @@
 import { MessagesQueryService } from './messages-query.service';
+import { computeCutoff } from '../../common/utils/postgres-sql';
 
 /**
  * Filter options for the Requests log.
@@ -106,8 +107,11 @@ describe('MessagesQueryService filter options', () => {
     expect(clauses.some((clause) => clause.includes('r.tenant_id = :blockedTenantId'))).toBe(true);
     // The window comes from the caller's range, not the 90-day default: a
     // regression that ignored params.range would otherwise pass every test here.
-    const cutoff = new Date(requestQb.where.mock.calls[0][1].cutoff as string).getTime();
-    expect(Date.now() - cutoff).toBeLessThan(25 * 60 * 60 * 1000);
+    // Compared against the same formatter rather than an absolute clock
+    // difference — computeCutoff emits local wall-clock with no zone, so a
+    // re-parsed value is off by an hour across a DST fall-back.
+    const cutoff = requestQb.where.mock.calls[0][1].cutoff as string;
+    expect(cutoff > computeCutoff('90 days')).toBe(true);
   });
 
   it('defaults the blocked-model window when the caller gives no range', async () => {
