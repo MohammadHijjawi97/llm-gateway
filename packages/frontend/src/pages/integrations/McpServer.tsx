@@ -15,7 +15,8 @@ interface ClientSetup {
 }
 
 /** One client, one snippet. Data, so the page stays a tab list rather than a wall. */
-export function clientSetups(endpoint: string): ClientSetup[] {
+/** Non-empty by construction, so the active-tab fallback to [0] is always defined. */
+export function clientSetups(endpoint: string): [ClientSetup, ...ClientSetup[]] {
   return [
     {
       id: 'claude-code',
