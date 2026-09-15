@@ -1514,6 +1514,14 @@ describe('MessageLog', () => {
         const tierSelect = selectWithOption(container, 'All tiers');
         expect(tierSelect.textContent).toContain('Premium');
       });
+
+      // The regression was the options being fetched per harness: on the
+      // global log that resolved to nothing. Pin the request as unscoped, or
+      // an agent-scoped fetch would satisfy the assertion above.
+      expect(mockGetMessageFilterOptions).toHaveBeenCalled();
+      for (const [query] of mockGetMessageFilterOptions.mock.calls) {
+        expect(query).not.toHaveProperty('agent_name');
+      }
     });
 
     it('sends header_tier_id in the query when a custom tier is selected', async () => {
