@@ -20,6 +20,14 @@ const AuthGuard: ParentComponent = (props) => {
       navigate(buildLoginRedirect(location.pathname, location.search), { replace: true });
       return;
     }
+    // The CLI consent page and the MCP OAuth consent page are not part of
+    // onboarding. Gate them on an authenticated session only, so a user who is
+    // mid-discovery/plan selection can still authorize a client (otherwise the
+    // login flow never gets its code).
+    if (location.pathname === '/cli/auth' || location.pathname === '/consent') {
+      setPlanChecked(true);
+      return;
+    }
     const userId = s.data.user?.id;
     // A freshly signed-up user with the discovery step still pending is sent
     // back to it from anywhere in the app except the form itself.

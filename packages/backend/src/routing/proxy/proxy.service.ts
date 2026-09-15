@@ -178,6 +178,12 @@ export interface ProxyResult {
   failedFallbacks?: FailedFallback[];
   /** Autofix audit when a repairable failure was sent to the healing service. */
   autofix?: AutofixRecord;
+  /**
+   * Autofix audit for the winning fallback hop. Separate from {@link autofix}
+   * (which is the primary's) so a recovered fallback's Phoenix metadata is
+   * recorded without overwriting the primary's attribution.
+   */
+  fallbackAutofix?: AutofixRecord;
 }
 
 /** Everything Autofix's reforward needs to re-send a healed body to a provider. */
@@ -280,12 +286,10 @@ export class ProxyService {
         `No route available for agent=${agentId}: ` +
           `tier=${resolved.tier} confidence=${resolved.confidence} reason=${resolved.reason}`,
       );
-      if (resolved.explicit_model_unavailable) {
-        return this.buildModelUnavailableResult(
-          stream,
-          agentName,
-          resolved.explicit_model_unavailable,
-        );
+      const unavailableModel =
+        resolved.explicit_model_unavailable ?? resolved.override_model_unavailable;
+      if (unavailableModel) {
+        return this.buildModelUnavailableResult(stream, agentName, unavailableModel);
       }
       return this.buildNoProviderResult(stream, agentName);
     }
@@ -743,6 +747,7 @@ export class ProxyService {
       model: ctx.model,
       signal: ctx.signal,
       authType: ctx.authType,
+      agentId: ctx.agentId,
       tenantProviderId: ctx.tenantProviderId,
       providerKeyLabel: ctx.keyLabel,
       startProviderAttempt: ctx.startProviderAttempt,
@@ -1290,6 +1295,7 @@ export class ProxyService {
           request_params: fallbackRequestParams,
         }),
         failedFallbacks: failures,
+        fallbackAutofix: success.autofix,
       };
     }
 
