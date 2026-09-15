@@ -29,4 +29,10 @@ describe('dashboard URLs', () => {
       'https://dashboard.example/autofix-icon-email.png',
     );
   });
+
+  it('ignores a blank explicit dashboard when a deployment URL is configured', () => {
+    process.env['BETTER_AUTH_URL'] = 'https://selfhosted.example/';
+    expect(getDashboardBaseUrl('   ')).toBe('https://selfhosted.example');
+    expect(getDashboardBaseUrl('///')).toBe('https://selfhosted.example');
+  });
 });
