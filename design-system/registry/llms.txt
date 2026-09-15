@@ -96,7 +96,7 @@
 --z-toast: 8000
 --z-tooltip: 9999
 
-## Blocks (312 BEM blocks, 1694 classes)
+## Blocks (314 BEM blocks, 1698 classes)
 account-back-btn (agents.css): account-back-btn
 account-email-footer (agents.css): account-email-footer
 account-email-toggle (agents.css): account-email-toggle--disabled
@@ -229,6 +229,8 @@ hljs-title (syntax-highlight.css): hljs-title
 hljs-type (syntax-highlight.css): hljs-type
 hljs-variable (syntax-highlight.css): hljs-variable
 info-tooltip (tooltip.css): info-tooltip info-tooltip__bubble info-tooltip__icon
+integration-grid (wizard.css): integration-grid
+integration-panel (wizard.css): integration-panel__desc integration-panel__header integration-panel__tabs
 json-block (request-drawer.css): json-block json-block__size-notice
 json-block-wrap (request-drawer.css): json-block-wrap
 language-json (request-drawer.css): language-json

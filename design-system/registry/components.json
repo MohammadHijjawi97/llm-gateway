@@ -1825,6 +1825,24 @@
         "tooltip.css"
       ]
     },
+    "integration-grid": {
+      "classes": [
+        "integration-grid"
+      ],
+      "files": [
+        "wizard.css"
+      ]
+    },
+    "integration-panel": {
+      "classes": [
+        "integration-panel__desc",
+        "integration-panel__header",
+        "integration-panel__tabs"
+      ],
+      "files": [
+        "wizard.css"
+      ]
+    },
     "json-block": {
       "classes": [
         "json-block",
@@ -5071,8 +5089,8 @@
   "stats": {
     "tokens": 79,
     "darkOverrides": 38,
-    "blocks": 312,
-    "classes": 1694,
+    "blocks": 314,
+    "classes": 1698,
     "canonicalRules": 46,
     "ghostRules": 46
   }

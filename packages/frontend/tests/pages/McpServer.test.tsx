@@ -1,12 +1,12 @@
 import { describe, it, expect, vi } from 'vitest';
-import { render } from '@solidjs/testing-library';
+import { render, fireEvent } from '@solidjs/testing-library';
 
 vi.mock('@solidjs/meta', () => ({
   Title: (props: { children?: unknown }) => <title>{String(props.children ?? '')}</title>,
   Meta: () => null,
 }));
 
-import McpServer from '../../src/pages/integrations/McpServer';
+import McpServer, { clientSetups } from '../../src/pages/integrations/McpServer';
 import { mcpEndpoint, installOrigin } from '../../src/services/install-endpoints';
 
 describe('install-endpoints', () => {
@@ -26,15 +26,38 @@ describe('MCP server page', () => {
     expect(container.textContent).not.toContain('app.manifest.build');
   });
 
-  it('renders a snippet for every supported client, each carrying the endpoint', () => {
+  it('offers a tab per supported client, with Claude Code selected first', () => {
     const { container } = render(() => <McpServer />);
-    const text = container.textContent ?? '';
-    for (const client of ['Claude Code', 'Codex', 'OpenCode']) {
-      expect(text).toContain(client);
+    const tabs = Array.from(container.querySelectorAll('.panel__tab')).map((t) =>
+      t.textContent?.trim(),
+    );
+    expect(tabs).toEqual(['Claude Code', 'Codex', 'OpenCode']);
+    const active = container.querySelector('.panel__tab--active');
+    expect(active?.textContent?.trim()).toBe('Claude Code');
+    expect(container.textContent).toContain('claude mcp add --transport http manifest');
+  });
+
+  it('swaps the snippet when another client tab is selected', () => {
+    const { container } = render(() => <McpServer />);
+    const byLabel = (label: string) =>
+      Array.from(container.querySelectorAll('.panel__tab')).find(
+        (t) => t.textContent?.trim() === label,
+      ) as HTMLElement;
+
+    fireEvent.click(byLabel('Codex'));
+    expect(container.textContent).toContain('codex mcp add manifest --url');
+    expect(container.textContent).not.toContain('claude mcp add --transport http');
+    expect(byLabel('Codex').getAttribute('aria-selected')).toBe('true');
+
+    fireEvent.click(byLabel('OpenCode'));
+    expect(container.textContent).toContain('opencode.ai/config.json');
+  });
+
+  it('builds every client snippet against this install endpoint', () => {
+    const endpoint = `${window.location.origin}/api/v1/mcp`;
+    for (const setup of clientSetups(endpoint)) {
+      expect(setup.code).toContain(endpoint);
     }
-    expect(text).toContain('claude mcp add --transport http manifest');
-    expect(text).toContain('codex mcp add manifest --url');
-    expect(text).toContain('opencode.ai/config.json');
   });
 
   it('explains the read-only scope and links to the tool list', () => {
