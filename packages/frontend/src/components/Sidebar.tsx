@@ -131,16 +131,6 @@ const Sidebar: Component<SidebarProps> = (props) => {
         Subscriptions
       </A>
 
-      <div class="sidebar__section-label">TOOLS</div>
-      <A
-        href="/playground"
-        class="sidebar__link"
-        classList={{ active: isGlobalActive('/playground') }}
-        aria-current={isGlobalActive('/playground') ? 'page' : undefined}
-      >
-        Playground
-      </A>
-
       {/* Integrations: surfaces that drive Manifest from outside the dashboard.
           The "New" pills are a showcase device, not structure — delete the two
           spans once these stop being new. n8n joins here when it gets a page. */}
@@ -162,6 +152,16 @@ const Sidebar: Component<SidebarProps> = (props) => {
       >
         CLI
         <span class="sidebar__badge">New</span>
+      </A>
+
+      <div class="sidebar__section-label">TOOLS</div>
+      <A
+        href="/playground"
+        class="sidebar__link"
+        classList={{ active: isGlobalActive('/playground') }}
+        aria-current={isGlobalActive('/playground') ? 'page' : undefined}
+      >
+        Playground
       </A>
 
       <div class="sidebar__spacer" />

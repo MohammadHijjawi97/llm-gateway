@@ -162,9 +162,9 @@ describe("Sidebar — global nav links", () => {
       "/providers/local",
       "/providers/usage-based",
       "/providers/subscriptions",
-      "/playground",
       "/integrations/mcp",
       "/integrations/cli",
+      "/playground",
     ]);
   });
 

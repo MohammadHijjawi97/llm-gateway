@@ -925,6 +925,19 @@
   margin-bottom: var(--gap-md);
 }
 
+/* The tabs don't shrink, so three client names exceed a 320px viewport. Scroll
+   the row rather than letting the last tab sit past the panel edge — same
+   treatment as .setup-method-tabs. */
+.integration-panel__tabs .panel__tabs {
+  max-width: 100%;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.integration-panel__tabs .panel__tabs::-webkit-scrollbar {
+  display: none;
+}
+
 /* Short steps sit side by side on a wide viewport and stack on a narrow one.
    No manual breakpoints, same approach as .routing-cards. */
 .integration-grid {
@@ -936,4 +949,13 @@
 .integration-grid .panel {
   margin-bottom: 0;
   min-width: 0;
+}
+
+/* auto-fit keeps the 340px minimum even when the viewport is narrower than
+   that, which overflows on a small phone. Collapse to one column first, the
+   same breakpoint .routing-cards uses for its 320px minimum. */
+@media (max-width: 600px) {
+  .integration-grid {
+    grid-template-columns: 1fr;
+  }
 }
