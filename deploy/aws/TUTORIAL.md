@@ -18,7 +18,7 @@ Open [AWS CloudShell](https://console.aws.amazon.com/cloudshell/home), choose th
 
 ```bash
 git clone https://github.com/mnfst/llm-gateway.git
-cd manifest
+cd llm-gateway
 AWS_REGION=us-east-1 ./deploy/aws/deploy.sh
 ```
 

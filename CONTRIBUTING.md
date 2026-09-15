@@ -47,8 +47,8 @@ Self-hosting is supported via the [Docker image](https://hub.docker.com/r/manife
 1. Fork and clone the repository:
 
 ```bash
-git clone https://github.com/<your-username>/manifest.git
-cd manifest
+git clone https://github.com/<your-username>/llm-gateway.git
+cd llm-gateway
 npm install
 ```
 
