@@ -31,7 +31,7 @@ describe('MCP server page', () => {
     const tabs = Array.from(container.querySelectorAll('.panel__tab')).map((t) =>
       t.textContent?.trim(),
     );
-    expect(tabs).toEqual(['Claude Code', 'Codex', 'OpenCode']);
+    expect(tabs).toEqual(['Claude Code', 'Codex', 'OpenCode', 'Other']);
     const active = container.querySelector('.panel__tab--active');
     expect(active?.textContent?.trim()).toBe('Claude Code');
     expect(container.textContent).toContain('claude mcp add --transport http manifest');
@@ -62,11 +62,24 @@ describe('MCP server page', () => {
       '/icons/providers/claude-code.svg',
       '/icons/providers/codex.svg',
       '/icons/providers/opencode.svg',
+      '/icons/other.svg',
     ]);
     // Decorative: the label beside it already names the client.
     for (const i of container.querySelectorAll('.panel__tab-icon')) {
       expect(i.getAttribute('alt')).toBe('');
     }
+  });
+
+  it('carries a generic mcpServers block for any other client', () => {
+    const { container } = render(() => <McpServer />);
+    const byLabel = (label: string) =>
+      Array.from(container.querySelectorAll('.panel__tab')).find(
+        (t) => t.textContent?.trim() === label,
+      ) as HTMLElement;
+
+    fireEvent.click(byLabel('Other'));
+    expect(container.textContent).toContain('mcpServers');
+    expect(container.textContent).toContain(`"url": "${window.location.origin}/api/v1/mcp"`);
   });
 
   it('builds every client snippet against this install endpoint', () => {

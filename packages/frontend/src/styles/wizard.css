@@ -669,7 +669,8 @@
 .dark .panel__tab-icon[src*='anthropic'],
 .dark .panel__tab-icon[src*='vercel'],
 .dark .panel__tab-icon[src*='opencode'],
-.dark .panel__tab-icon[src*='codex'] {
+.dark .panel__tab-icon[src*='codex'],
+.dark .panel__tab-icon[src*='other'] {
   filter: invert(1);
 }
 

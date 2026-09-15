@@ -47,6 +47,19 @@ export function clientSetups(endpoint: string): ClientSetup[] {
   }
 }`,
     },
+    {
+      id: 'other',
+      label: 'Other',
+      icon: PLATFORM_ICONS.other,
+      language: 'json',
+      code: `{
+  "mcpServers": {
+    "manifest": {
+      "url": "${endpoint}"
+    }
+  }
+}`,
+    },
   ];
 }
 
@@ -105,9 +118,6 @@ const McpServer: Component = () => {
           </div>
         </div>
         <CodeBlock code={active().code} language={active().language} />
-        <p class="integration-panel__desc" style="margin: var(--gap-md) 0 0;">
-          Any other client works the same way. Add the endpoint and approve it in the browser.
-        </p>
       </div>
 
       <div class="panel">
