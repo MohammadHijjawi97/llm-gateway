@@ -28,7 +28,11 @@ mnfst agent configure coding-assistant --models grok-4.5,grok-4 --provider xai
 mnfst routing test coding-assistant`;
 
 const Cli: Component = () => {
-  const [selfHosted] = createResource(checkIsSelfHosted);
+  // A failed deployment check must not throw into the render tree: this page
+  // has a correct answer for "unknown" and nothing to escalate. Swallowing it
+  // here keeps the failure indistinguishable from still-loading, which is what
+  // the memo below already handles.
+  const [selfHosted] = createResource(() => checkIsSelfHosted().catch(() => undefined));
   // Only a confirmed Cloud install drops the flag; unresolved and errored both
   // keep it, so a self-hosted user never sees a command that targets Cloud.
   const login = createMemo(() => loginCommand(selfHosted() !== false, installOrigin()));

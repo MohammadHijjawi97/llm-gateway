@@ -45,8 +45,11 @@ describe('CLI page', () => {
 
   it('shows a bare login on cloud', async () => {
     const { container } = render(() => <Cli />);
-    await waitFor(() => expect(container.textContent).toContain('mnfst login'));
-    expect(container.textContent).not.toContain('--url');
+    // Wait for the flag to disappear, not for 'mnfst login' to appear: the
+    // pinned form contains that substring too, so it would match immediately
+    // and assert before the deployment check resolved.
+    await waitFor(() => expect(container.textContent).not.toContain('--url'));
+    expect(container.textContent).toContain('mnfst login');
   });
 
   it('adds the host flag on self-hosted', async () => {
