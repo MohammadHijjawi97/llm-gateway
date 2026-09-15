@@ -7,14 +7,20 @@ vi.mock('@solidjs/meta', () => ({
 }));
 
 let mockIsSelfHosted = false;
+let mockPending: Promise<boolean> | null = null;
+let mockRejects = false;
 vi.mock('../../src/services/setup-status.js', () => ({
-  checkIsSelfHosted: () => Promise.resolve(mockIsSelfHosted),
+  checkIsSelfHosted: () => {
+    if (mockRejects) return Promise.reject(new Error('status unavailable'));
+    if (mockPending) return mockPending;
+    return Promise.resolve(mockIsSelfHosted);
+  },
 }));
 
 import Cli, { loginCommand } from '../../src/pages/integrations/Cli';
 
 describe('loginCommand', () => {
-  it('pins the host on self-hosted, where only the dashboard knows it', () => {
+  it('pins the host when asked, where only the dashboard knows it', () => {
     expect(loginCommand(true, 'https://llm.acme.internal')).toBe(
       'mnfst login --url https://llm.acme.internal',
     );
@@ -28,6 +34,8 @@ describe('loginCommand', () => {
 describe('CLI page', () => {
   beforeEach(() => {
     mockIsSelfHosted = false;
+    mockPending = null;
+    mockRejects = false;
   });
 
   it('shows the npm install for the published package', () => {
@@ -43,6 +51,26 @@ describe('CLI page', () => {
 
   it('adds the host flag on self-hosted', async () => {
     mockIsSelfHosted = true;
+    const { container } = render(() => <Cli />);
+    await waitFor(() =>
+      expect(container.textContent).toContain(`mnfst login --url ${window.location.origin}`),
+    );
+  });
+
+  it('keeps the host flag while the deployment check is still in flight', async () => {
+    let release: (v: boolean) => void = () => {};
+    mockPending = new Promise<boolean>((r) => {
+      release = r;
+    });
+    const { container } = render(() => <Cli />);
+    // Nothing has resolved yet: the explicit form is the one that works either way.
+    expect(container.textContent).toContain(`mnfst login --url ${window.location.origin}`);
+    release(false);
+    await waitFor(() => expect(container.textContent).not.toContain('--url'));
+  });
+
+  it('keeps the host flag when the deployment check fails', async () => {
+    mockRejects = true;
     const { container } = render(() => <Cli />);
     await waitFor(() =>
       expect(container.textContent).toContain(`mnfst login --url ${window.location.origin}`),

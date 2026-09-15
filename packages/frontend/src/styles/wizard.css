@@ -881,6 +881,14 @@
     word-break: normal;
   }
 
+  /* Exception: .setup-cli-block overlays a whole action row (eye toggle +
+     copy) at right: 8px, top: 8px, which is far wider than the 46px gutter
+     sized for a single copy button. Those blocks keep the reserved row, or a
+     wrapped first line renders behind the buttons. */
+  .setup-cli-block .setup-method__code {
+    padding: 44px 12px 12px;
+  }
+
   .modal-terminal__body {
     padding: 44px 12px 12px;
     overflow-x: auto;

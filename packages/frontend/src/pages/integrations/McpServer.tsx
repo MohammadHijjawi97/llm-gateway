@@ -14,8 +14,10 @@ interface ClientSetup {
   code: string;
 }
 
-/** One client, one snippet. Data, so the page stays a tab list rather than a wall. */
-/** Non-empty by construction, so the active-tab fallback to [0] is always defined. */
+/**
+ * One client, one snippet: data, so the page stays a tab list rather than a
+ * wall. Typed non-empty so the active-tab fallback to [0] is always defined.
+ */
 export function clientSetups(endpoint: string): [ClientSetup, ...ClientSetup[]] {
   return [
     {

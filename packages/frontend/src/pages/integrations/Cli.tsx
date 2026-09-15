@@ -11,9 +11,15 @@ const PACKAGE = '@mnfst/gateway-cli';
  * On a self-hosted install the CLI has to be told which host to talk to, and
  * this dashboard is the only place that knows it. On Cloud the CLI already
  * defaults there, so the flag would be noise.
+ *
+ * `pinHost` is deliberately "not known to be Cloud" rather than "known to be
+ * self-hosted". While the deployment check is in flight, or if it fails, the
+ * honest fallback is the explicit form: `--url` is merely redundant on Cloud,
+ * whereas a bare `mnfst login` is plain wrong on a self-hosted install and the
+ * user would copy it before the check resolved.
  */
-export function loginCommand(selfHosted: boolean, origin: string): string {
-  return selfHosted ? `mnfst login --url ${origin}` : 'mnfst login';
+export function loginCommand(pinHost: boolean, origin: string): string {
+  return pinHost ? `mnfst login --url ${origin}` : 'mnfst login';
 }
 
 const EXAMPLE = `mnfst agent create --name coding-assistant --platform openclaw
@@ -23,7 +29,9 @@ mnfst routing test coding-assistant`;
 
 const Cli: Component = () => {
   const [selfHosted] = createResource(checkIsSelfHosted);
-  const login = createMemo(() => loginCommand(selfHosted() === true, installOrigin()));
+  // Only a confirmed Cloud install drops the flag; unresolved and errored both
+  // keep it, so a self-hosted user never sees a command that targets Cloud.
+  const login = createMemo(() => loginCommand(selfHosted() !== false, installOrigin()));
 
   return (
     <div class="container--lg">
