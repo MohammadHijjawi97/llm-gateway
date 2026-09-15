@@ -1,5 +1,6 @@
-import { createMemo, createSignal, For, type Component } from 'solid-js';
+import { createMemo, createSignal, For, Show, type Component } from 'solid-js';
 import { Title, Meta } from '@solidjs/meta';
+import { PLATFORM_ICONS } from 'manifest-shared';
 import CodeBlock from '../../components/CodeBlock.jsx';
 import { mcpEndpoint } from '../../services/install-endpoints.js';
 
@@ -8,6 +9,7 @@ const DOCS_URL = 'https://manifest.build/docs/integrations/mcp/';
 interface ClientSetup {
   id: string;
   label: string;
+  icon?: string;
   language: string;
   code: string;
 }
@@ -18,18 +20,21 @@ export function clientSetups(endpoint: string): ClientSetup[] {
     {
       id: 'claude-code',
       label: 'Claude Code',
+      icon: PLATFORM_ICONS['claude-code'],
       language: 'bash',
       code: `claude mcp add --transport http manifest ${endpoint}`,
     },
     {
       id: 'codex',
       label: 'Codex',
+      icon: PLATFORM_ICONS.codex,
       language: 'bash',
       code: `codex mcp add manifest --url ${endpoint}\ncodex mcp login manifest`,
     },
     {
       id: 'opencode',
       label: 'OpenCode',
+      icon: PLATFORM_ICONS.opencode,
       language: 'json',
       code: `{
   "$schema": "https://opencode.ai/config.json",
@@ -90,6 +95,9 @@ const McpServer: Component = () => {
                   aria-selected={activeId() === client.id}
                   onClick={() => setActiveId(client.id)}
                 >
+                  <Show when={client.icon}>
+                    <img class="panel__tab-icon" src={client.icon} alt="" width="16" height="16" />
+                  </Show>
                   {client.label}
                 </button>
               )}

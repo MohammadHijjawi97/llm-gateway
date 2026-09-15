@@ -53,6 +53,22 @@ describe('MCP server page', () => {
     expect(container.textContent).toContain('opencode.ai/config.json');
   });
 
+  it('shows each client logo, sourced from the shared platform map', () => {
+    const { container } = render(() => <McpServer />);
+    const icons = Array.from(container.querySelectorAll('.panel__tab .panel__tab-icon')).map((i) =>
+      i.getAttribute('src'),
+    );
+    expect(icons).toEqual([
+      '/icons/providers/claude-code.svg',
+      '/icons/providers/codex.svg',
+      '/icons/providers/opencode.svg',
+    ]);
+    // Decorative: the label beside it already names the client.
+    for (const i of container.querySelectorAll('.panel__tab-icon')) {
+      expect(i.getAttribute('alt')).toBe('');
+    }
+  });
+
   it('builds every client snippet against this install endpoint', () => {
     const endpoint = `${window.location.origin}/api/v1/mcp`;
     for (const setup of clientSetups(endpoint)) {

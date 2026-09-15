@@ -166,6 +166,7 @@
 .dark .agent-type-select__option-icon[src*='vercel'],
 .dark .agent-type-select__option-icon[src*='opencode'],
 .dark .agent-type-select__option-icon[src*='hermes'],
+.dark .agent-type-select__option-icon[src*='codex'],
 .dark .agent-type-select__option-icon[src*='other'] {
   filter: invert(1);
 }
