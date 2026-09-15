@@ -11,7 +11,7 @@ import {
 import { validatePublicUrl } from '../../common/utils/url-validation';
 import { isSelfHosted } from '../../common/utils/detect-self-hosted';
 import { resolveSubscriptionEndpointKey } from './provider-hooks';
-import { mergeAnthropicBeta } from './anthropic-beta';
+import { isAnthropicHost, mergeAnthropicBeta } from './anthropic-beta';
 import { injectOpenAiMessageCacheControl, injectOpenRouterCacheControl } from './cache-injection';
 import {
   applyAnthropicAutomaticCacheControl,
@@ -761,12 +761,11 @@ export class ProviderClient {
         url: `${endpoint.baseUrl}${endpoint.buildPath(bareModel)}`,
         headers: withClientAnthropicBeta(
           endpoint.buildHeaders(apiKey, authType),
-          // Anthropic itself only. The other `format: 'anthropic'` endpoints
-          // (Bedrock, BytePlus, CommandCode, MiniMax, Kimi, OpenCode Go) merely
-          // speak the Messages shape: they have never been sent an
-          // `anthropic-beta` header, and a flag naming an Anthropic-only
-          // feature is meaningless — or rejected — there.
-          endpointKey === 'anthropic' ? ctx.clientAnthropicBeta : undefined,
+          // Keyed on the host, not the registry key: a tenant can reach
+          // Anthropic through a custom provider row (endpointKey `custom`) and
+          // needs the flags just as much, while the Anthropic-compatible third
+          // parties stay excluded.
+          isAnthropicHost(endpoint.baseUrl) ? ctx.clientAnthropicBeta : undefined,
         ),
         requestBody,
         structuredOutputToolName: syntheticToolName,

@@ -1,4 +1,5 @@
 import {
+  isAnthropicHost,
   MAX_CLIENT_BETA_BYTES,
   MAX_CLIENT_BETA_FLAGS,
   mergeAnthropicBeta,
@@ -41,9 +42,12 @@ describe('parseClientBetas', () => {
     expect(parseClientBetas('-leading-dash')).toEqual([]);
   });
 
-  it('drops a single flag longer than 64 characters but keeps its neighbours', () => {
-    const long = `a${'b'.repeat(64)}`;
-    expect(parseClientBetas(`${long},good-2025-01-01`)).toEqual(['good-2025-01-01']);
+  it('keeps a long flag, since only the charset makes a flag unsafe', () => {
+    // A per-token length cap would silently drop a future beta whose name runs
+    // long, recreating the exact bug this module exists to fix. The aggregate
+    // byte budget is what bounds the header.
+    const long = `a${'b'.repeat(120)}`;
+    expect(parseClientBetas(`${long},good-2025-01-01`)).toEqual([long, 'good-2025-01-01']);
   });
 
   it('dedupes repeated flags, keeping the first occurrence', () => {
@@ -102,5 +106,29 @@ describe('mergeAnthropicBeta', () => {
 
   it("keeps Manifest's flags when the caller's header is entirely junk", () => {
     expect(mergeAnthropicBeta('oauth-2025-04-20', 'Bad Header')).toBe('oauth-2025-04-20');
+  });
+});
+
+describe('isAnthropicHost', () => {
+  it('accepts Anthropic itself', () => {
+    expect(isAnthropicHost('https://api.anthropic.com')).toBe(true);
+  });
+
+  it('accepts a custom endpoint pointed at Anthropic', () => {
+    // A tenant may reach Anthropic through a custom provider row; the beta
+    // flags are just as necessary there.
+    expect(isAnthropicHost('https://api.anthropic.com/v1')).toBe(true);
+  });
+
+  it('rejects an Anthropic-compatible third party', () => {
+    expect(isAnthropicHost('https://api.moonshot.ai/anthropic')).toBe(false);
+  });
+
+  it('rejects a lookalike host', () => {
+    expect(isAnthropicHost('https://api.anthropic.com.evil.test')).toBe(false);
+  });
+
+  it('rejects an unparseable base URL', () => {
+    expect(isAnthropicHost('not a url')).toBe(false);
   });
 });

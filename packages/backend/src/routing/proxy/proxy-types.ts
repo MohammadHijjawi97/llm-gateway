@@ -114,7 +114,9 @@ export interface ForwardOptions {
   thinkingRouteContext?: ThinkingBlockRouteContext;
   /**
    * The caller's raw `anthropic-beta` header, merged into (never replacing)
-   * Manifest's own flags on Anthropic-format routes. Without it, beta-gated
+   * Manifest's own flags when the resolved endpoint is Anthropic itself (the
+   * `anthropic` route or a custom row pointed at it, never the
+   * Anthropic-compatible third parties). Without it, beta-gated
    * body fields the caller legitimately sent come back as
    * `<field>: Extra inputs are not permitted`. Sanitized at the merge.
    */

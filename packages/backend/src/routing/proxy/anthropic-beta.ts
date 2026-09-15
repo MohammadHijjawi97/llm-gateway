@@ -21,8 +21,14 @@
  * this fixes.
  */
 
-/** A flag is a lowercase token: `structured-outputs-2025-11-13`. Max 64 chars. */
-const BETA_FLAG_RE = /^[a-z0-9][a-z0-9.-]{0,63}$/;
+/**
+ * A flag is a lowercase token: `structured-outputs-2025-11-13`. Deliberately
+ * unbounded in length — the charset is what makes a flag safe to put in a
+ * header, and a per-token cap would silently drop a future beta whose name runs
+ * long, recreating the bug this module exists to fix. Size is bounded in
+ * aggregate instead.
+ */
+const BETA_FLAG_RE = /^[a-z0-9][a-z0-9.-]*$/;
 
 /** Most flags a caller may contribute. Anthropic's own betas number in the dozens. */
 export const MAX_CLIENT_BETA_FLAGS = 20;
@@ -78,4 +84,25 @@ export function mergeAnthropicBeta(
     if (!merged.includes(flag)) merged.push(flag);
   }
   return merged.join(',');
+}
+
+/** Anthropic's own API host. Must match exactly; a suffix match would accept a lookalike. */
+const ANTHROPIC_HOST = 'api.anthropic.com';
+
+/**
+ * Whether a resolved endpoint's base URL is Anthropic itself.
+ *
+ * Gating on the endpoint registry key is not enough: a tenant can reach
+ * Anthropic through a custom provider row, which resolves to the `custom` key
+ * and would otherwise keep losing the caller's flags. Gating on the host also
+ * keeps the Anthropic-compatible third parties out — Bedrock, BytePlus,
+ * CommandCode, MiniMax, Kimi and OpenCode Go speak the Messages shape but have
+ * never been sent this header.
+ */
+export function isAnthropicHost(baseUrl: string): boolean {
+  try {
+    return new URL(baseUrl).hostname === ANTHROPIC_HOST;
+  } catch {
+    return false;
+  }
 }

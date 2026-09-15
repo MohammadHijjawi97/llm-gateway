@@ -452,6 +452,31 @@ describe('ProviderClient — anthropic-beta merge', () => {
     expect(mockFetch.mock.calls[0][1].headers).not.toHaveProperty('anthropic-beta');
   });
 
+  it('forwards through a custom endpoint that points at Anthropic', async () => {
+    // A tenant can reach Anthropic through a custom provider row, which
+    // resolves to the `custom` endpoint key. The flags are as necessary there.
+    await client.forward({
+      provider: 'my-anthropic',
+      apiKey: 'sk-ant-key',
+      model: 'claude-sonnet-4-20250514',
+      body,
+      stream: false,
+      clientAnthropicBeta: 'structured-outputs-2025-11-13',
+      customEndpoint: {
+        baseUrl: 'https://api.anthropic.com',
+        buildHeaders: (apiKey: string) => ({
+          'x-api-key': apiKey,
+          'Content-Type': 'application/json',
+          'anthropic-version': '2023-06-01',
+        }),
+        buildPath: () => '/v1/messages',
+        format: 'anthropic',
+      },
+    });
+
+    expect(sentBeta()).toBe('structured-outputs-2025-11-13');
+  });
+
   it('does not send the header to an Anthropic-compatible third party', async () => {
     // Kimi, Bedrock, BytePlus and friends only speak the Messages *shape* —
     // they have never received an `anthropic-beta` header and a flag naming an

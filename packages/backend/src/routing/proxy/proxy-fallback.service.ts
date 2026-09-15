@@ -48,7 +48,7 @@ interface ForwardProviderOptions {
   apiMode?: ProxyApiMode;
   signatureLookup?: SignatureLookup;
   thinkingLookup?: ThinkingBlockLookup;
-  /** The caller's raw `anthropic-beta` header, merged in on Anthropic routes. */
+  /** The caller's raw `anthropic-beta` header, merged in when the endpoint is Anthropic. */
   clientAnthropicBeta?: string | string[];
   paramMergeContext?: ParamMergeContext;
   tenantProviderId?: string | null;

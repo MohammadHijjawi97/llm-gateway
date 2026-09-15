@@ -172,10 +172,13 @@ describe('anthropic-beta passthrough (e2e)', () => {
     expect(upstreamHeaders[0]).not.toHaveProperty('anthropic-beta');
   });
 
-  it('drops a malformed flag instead of forwarding it', async () => {
-    await postMessages('Bad Flag');
+  it('drops a malformed flag while keeping the valid ones beside it', async () => {
+    // A malformed-only header is observably identical to sending none, so it
+    // proves nothing on its own. The mixed case is the one that can go wrong.
+    await postMessages('context-management-2025-06-27, Bad Flag, effort-2025-11-24');
 
     expect(upstreamHeaders).toHaveLength(1);
-    expect(upstreamHeaders[0]).not.toHaveProperty('anthropic-beta');
+    const flags = (upstreamHeaders[0]!['anthropic-beta'] ?? '').split(',');
+    expect(flags).toEqual(['context-management-2025-06-27', 'effort-2025-11-24']);
   });
 });
