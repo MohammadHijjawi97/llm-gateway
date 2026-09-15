@@ -25,6 +25,7 @@ tells you which server version the CLI was built against.
 ### From the monorepo
 
 ```bash
+npm install
 npm run build --workspace=packages/shared
 npm run build --workspace=packages/cli
 node packages/cli/bin/mnfst.js --help
