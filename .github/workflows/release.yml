@@ -201,8 +201,19 @@ jobs:
           VIEW_STATUS=$?
           set -e
           if [ "$VIEW_STATUS" -eq 0 ]; then
+            # A package version can exist under someone else's ownership because
+            # an unscoped name is global. Confirm our exact npm maintainer before
+            # treating this as a successful retry.
+            MAINTAINERS=$(npm view "mnfst-gateway-cli@${VERSION}" maintainers --json)
+            if ! printf '%s' "$MAINTAINERS" | jq -e \
+              'type == "array" and any(.[]; split(" <")[0] == "guillaumegay")' \
+              >/dev/null; then
+              echo "mnfst-gateway-cli@${VERSION} exists but is not maintained by this account." >&2
+              echo "Refusing to report success for someone else's package." >&2
+              exit 1
+            fi
             echo "skip=true" >> "$GITHUB_OUTPUT"
-            echo "mnfst-gateway-cli@${VERSION} is already published; skipping."
+            echo "mnfst-gateway-cli@${VERSION} is already published by us; skipping."
           elif printf '%s' "$VIEW_OUTPUT" | grep -q 'E404'; then
             echo "skip=false" >> "$GITHUB_OUTPUT"
             echo "mnfst-gateway-cli@${VERSION} is not on npm yet; publishing."
