@@ -50,9 +50,10 @@ export const mcpResources = (cloudOrigins.length ? cloudOrigins : [authOrigin]).
 
 /** Keep each Cloud MCP endpoint bound to the host the client connected to. */
 export function authOriginForHost(host: string | undefined): string {
+  const normalizedHost = parseOriginHost(host);
   return (
     (cloudOrigins.length ? cloudOrigins : [authOrigin]).find(
-      (origin) => new URL(origin).host === host?.toLowerCase(),
+      (origin) => new URL(origin).host === normalizedHost,
     ) ?? authOrigin
   );
 }
@@ -95,8 +96,7 @@ function parseOriginHost(value: string | undefined): string | null {
  * registered :3001 URL.
  */
 function buildAuthBaseURL():
-  | string
-  | { allowedHosts: string[]; fallback: string; protocol: 'http' | 'https' } {
+  string | { allowedHosts: string[]; fallback: string; protocol: 'http' | 'https' } {
   if (isDev) return authOrigin;
   const hosts = new Set<string>();
   const add = (value: string | undefined) => {

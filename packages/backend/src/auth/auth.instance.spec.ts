@@ -515,6 +515,12 @@ describe('auth.instance', () => {
       expect(mod.mcpResourceForHost('gateway.manifest.build')).toBe(
         'https://gateway.manifest.build/api/v1/mcp',
       );
+      expect(mod.mcpResourceForHost('gateway.manifest.build:443')).toBe(
+        'https://gateway.manifest.build/api/v1/mcp',
+      );
+      expect(mod.mcpResourceForHost('gateway.manifest.build:444')).toBe(
+        'https://app.manifest.build/api/v1/mcp',
+      );
       expect(mod.authIssuerForHost('gateway.manifest.build')).toBe(
         'https://gateway.manifest.build/api/auth',
       );
@@ -635,7 +641,9 @@ describe('auth.instance', () => {
       const { mcp } = jest.requireMock('@better-auth/mcp') as { mcp: jest.Mock };
       const config = mcp.mock.calls[0][0];
       expect(config.resource).toBe('https://app.manifest.build/api/v1/mcp');
-      expect(config.resources.map((resource: { identifier: string }) => resource.identifier)).toEqual([
+      expect(
+        config.resources.map((resource: { identifier: string }) => resource.identifier),
+      ).toEqual([
         'https://app.manifest.build/api/v1/mcp',
         'https://gateway.manifest.build/api/v1/mcp',
       ]);
