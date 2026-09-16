@@ -6,10 +6,12 @@ const mockNavigate = vi.fn();
 const mockCheckNeedsSetup = vi.fn();
 let mockSessionData: any = { data: null, isPending: false };
 let mockSearchParams: Record<string, string | string[]> = {};
+let mockLocation = { search: '' };
 let setMockSession: ((v: any) => void) | undefined;
 
 vi.mock('@solidjs/router', () => ({
   useNavigate: () => mockNavigate,
+  useLocation: () => mockLocation,
   useSearchParams: () => [mockSearchParams],
 }));
 
@@ -31,6 +33,7 @@ describe('GuestGuard', () => {
     localStorage.clear();
     mockSessionData = { data: null, isPending: false };
     mockSearchParams = {};
+    mockLocation = { search: '' };
     mockCheckNeedsSetup.mockResolvedValue(false);
   });
 
@@ -124,6 +127,34 @@ describe('GuestGuard', () => {
       expect(mockNavigate).toHaveBeenCalledWith('/upgrade?reason=requests', {
         replace: true,
       });
+    });
+  });
+
+  it('preserves signed MCP authorization during the authenticated redirect', async () => {
+    mockSessionData = {
+      data: { user: { id: 'u1', name: 'Test' } },
+      isPending: false,
+    };
+    mockSearchParams = {
+      client_id: 'client',
+      redirect_uri: 'http://127.0.0.1/callback',
+      ba_param: ['client_id', 'redirect_uri'],
+      sig: 'abc',
+    };
+    mockLocation = {
+      search:
+        '?client_id=client&redirect_uri=http%3A%2F%2F127.0.0.1%2Fcallback&ba_param=client_id&ba_param=redirect_uri&sig=abc',
+    };
+    render(() => (
+      <GuestGuard>
+        <span>Guest content</span>
+      </GuestGuard>
+    ));
+    await vi.waitFor(() => {
+      expect(mockNavigate).toHaveBeenCalledWith(
+        '/api/auth/oauth2/authorize?client_id=client&redirect_uri=http%3A%2F%2F127.0.0.1%2Fcallback&ba_param=client_id&ba_param=redirect_uri&sig=abc',
+        { replace: true },
+      );
     });
   });
 

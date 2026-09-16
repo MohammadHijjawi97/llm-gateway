@@ -1,4 +1,4 @@
-import { useNavigate, useSearchParams } from '@solidjs/router';
+import { useLocation, useNavigate, useSearchParams } from '@solidjs/router';
 import { Show, createEffect, createSignal, onMount, type ParentComponent } from 'solid-js';
 import { authClient } from '../services/auth-client.js';
 import { getAuthDestination } from '../services/auth-redirects.js';
@@ -8,6 +8,7 @@ import { getDiscoveryPendingNext } from '../services/discovery.js';
 
 const GuestGuard: ParentComponent = (props) => {
   const session = authClient.useSession();
+  const location = useLocation();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const [setupChecked, setSetupChecked] = createSignal(false);
@@ -38,7 +39,7 @@ const GuestGuard: ParentComponent = (props) => {
         if (setupChecked()) setReady(true);
         return;
       }
-      navigate(getAuthDestination(searchParams), { replace: true });
+      navigate(getAuthDestination(searchParams, location.search), { replace: true });
     }
     if (setupChecked() && !s.isPending && !s.data) {
       setReady(true);
