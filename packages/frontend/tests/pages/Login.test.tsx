@@ -288,7 +288,7 @@ describe('Login', () => {
     const hrefSetter = vi.fn();
     Object.defineProperty(window.location, 'href', { set: hrefSetter, configurable: true });
     mockLocationSearch =
-      '?client_id=client&redirect_uri=http%3A%2F%2F127.0.0.1%2Fcallback&ba_param=client_id&sig=abc';
+      '?client_id=client&redirect_uri=http%3A%2F%2F127.0.0.1%2Fcallback&ba_param=client_id&ba_param=redirect_uri&sig=abc';
     mockSignInEmail.mockResolvedValue({ error: null });
     const { container } = render(() => <Login />);
     fireEvent.input(container.querySelector('input[type="email"]')!, {

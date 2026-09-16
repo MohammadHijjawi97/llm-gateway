@@ -107,7 +107,7 @@ describe('SocialButtons', () => {
 
   it('resumes signed MCP authorization after social sign-in', async () => {
     mockLocationSearch =
-      '?client_id=client&redirect_uri=http%3A%2F%2F127.0.0.1%2Fcallback&ba_param=client_id&sig=abc';
+      '?client_id=client&redirect_uri=http%3A%2F%2F127.0.0.1%2Fcallback&ba_param=client_id&ba_param=redirect_uri&sig=abc';
     render(() => <SocialButtons />);
     await fireEvent.click(screen.getByText('Continue with Google'));
     expect(mockSignInSocial).toHaveBeenCalledWith({
