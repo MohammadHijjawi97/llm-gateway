@@ -7,6 +7,7 @@ import compression from 'compression';
 import * as express from 'express';
 import { AppModule } from './app.module';
 import { auth } from './auth/auth.instance';
+import { mcpOAuthResponse } from './auth/mcp-oauth-response';
 import { mountMcpDiscovery } from './mcp/mcp-discovery';
 import { SpaFallbackFilter } from './common/filters/spa-fallback.filter';
 import { httpErrorLogger } from './common/middleware/http-error-logger.middleware';
@@ -214,7 +215,12 @@ export async function bootstrap() {
 
   // Mount Better Auth handler (needs raw body, before express.json)
   const { toNodeHandler } = await import('better-auth/node');
-  expressApp.all('/api/auth/*splat', toNodeHandler(auth));
+  expressApp.all(
+    '/api/auth/*splat',
+    toNodeHandler((request: Request) =>
+      auth.handler(request).then((response) => mcpOAuthResponse(request, response)),
+    ),
+  );
 
   // Re-add body parsing for NestJS routes. The OpenAI-compatible proxy has a
   // separate parser because clients may legitimately send large inline image
