@@ -1,7 +1,7 @@
 import { useLocation, useNavigate, useSearchParams } from '@solidjs/router';
 import { Show, createEffect, createSignal, onMount, type ParentComponent } from 'solid-js';
 import { authClient } from '../services/auth-client.js';
-import { getAuthDestination } from '../services/auth-redirects.js';
+import { getAuthDestination, signedOAuthDestination } from '../services/auth-redirects.js';
 import { checkNeedsSetup } from '../services/setup-status.js';
 import { hasPlanBeenChosen } from '../services/plan-selection.js';
 import { getDiscoveryPendingNext } from '../services/discovery.js';
@@ -40,7 +40,7 @@ const GuestGuard: ParentComponent = (props) => {
         return;
       }
       const destination = getAuthDestination(searchParams, location.search);
-      if (destination.startsWith('/api/auth/oauth2/authorize')) {
+      if (signedOAuthDestination(location.search) === destination) {
         globalThis.location.assign(destination);
       } else {
         navigate(destination, { replace: true });
