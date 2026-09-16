@@ -198,7 +198,7 @@ describe('Login', () => {
     });
     fireEvent.submit(container.querySelector('form')!);
     await vi.waitFor(() => {
-      expect(container.textContent).toContain('Resend verification email');
+      expect(container.textContent).toContain('Send verification email');
     });
   });
 
@@ -216,10 +216,10 @@ describe('Login', () => {
     });
     fireEvent.submit(container.querySelector('form')!);
     await vi.waitFor(() => {
-      expect(container.textContent).toContain('Resend verification email');
+      expect(container.textContent).toContain('Send verification email');
     });
     const resendBtn = Array.from(container.querySelectorAll('button')).find((b) =>
-      b.textContent?.includes('Resend verification email'),
+      b.textContent?.includes('Send verification email'),
     )!;
     fireEvent.click(resendBtn);
     await vi.waitFor(() => {
@@ -295,10 +295,10 @@ describe('Login', () => {
     });
     fireEvent.submit(container.querySelector('form')!);
     await vi.waitFor(() => {
-      expect(container.textContent).toContain('Resend verification email');
+      expect(container.textContent).toContain('Send verification email');
     });
     const resendBtn = Array.from(container.querySelectorAll('button')).find((b) =>
-      b.textContent?.includes('Resend verification email'),
+      b.textContent?.includes('Send verification email'),
     )!;
     fireEvent.click(resendBtn);
     await vi.waitFor(() => {
@@ -379,10 +379,10 @@ describe('Login', () => {
     });
     fireEvent.submit(container.querySelector('form')!);
     await vi.waitFor(() => {
-      expect(container.textContent).toContain('Resend verification email');
+      expect(container.textContent).toContain('Send verification email');
     });
     const resendBtn = Array.from(container.querySelectorAll('button')).find((b) =>
-      b.textContent?.includes('Resend verification email'),
+      b.textContent?.includes('Send verification email'),
     )!;
     fireEvent.click(resendBtn);
     await vi.waitFor(() => {
@@ -396,7 +396,7 @@ describe('Login', () => {
     // Advance to expire cooldown
     vi.advanceTimersByTime(60000);
     await vi.waitFor(() => {
-      expect(container.textContent).toContain('Resend verification email');
+      expect(container.textContent).toContain('Send verification email');
     });
     vi.useRealTimers();
   });
@@ -457,10 +457,10 @@ describe('Login', () => {
     });
     fireEvent.submit(container.querySelector('form')!);
     await vi.waitFor(() => {
-      expect(container.textContent).toContain('Resend verification email');
+      expect(container.textContent).toContain('Send verification email');
     });
     const resendBtn = Array.from(container.querySelectorAll('button')).find((b) =>
-      b.textContent?.includes('Resend verification email'),
+      b.textContent?.includes('Send verification email'),
     )!;
     fireEvent.click(resendBtn);
     await vi.waitFor(() => {
@@ -483,10 +483,10 @@ describe('Login', () => {
     });
     fireEvent.submit(container.querySelector('form')!);
     await vi.waitFor(() => {
-      expect(container.textContent).toContain('Resend verification email');
+      expect(container.textContent).toContain('Send verification email');
     });
     const resendBtn = Array.from(container.querySelectorAll('button')).find((b) =>
-      b.textContent?.includes('Resend verification email'),
+      b.textContent?.includes('Send verification email'),
     )!;
     fireEvent.click(resendBtn);
     await vi.waitFor(() => {

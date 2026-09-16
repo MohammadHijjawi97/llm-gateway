@@ -190,11 +190,7 @@ const Login: Component = () => {
             onClick={handleResendVerification}
             disabled={resendCooldown() > 0}
           >
-            {resendCooldown() > 0
-              ? `Resend in ${resendCooldown()}s`
-              : searchParams.error === 'account_not_linked'
-                ? 'Send verification email'
-                : 'Resend verification email'}
+            {resendCooldown() > 0 ? `Resend in ${resendCooldown()}s` : 'Send verification email'}
           </button>
         </Show>
         <label class="auth-form__label" for={passwordId}>
