@@ -501,10 +501,11 @@ describe('auth.instance', () => {
 
       const config = mockBetterAuth.mock.calls[0][0];
       expect(config.baseURL).toEqual({
-        allowedHosts: ['gateway.manifest.build', 'app.manifest.build'],
+        allowedHosts: expect.arrayContaining(['gateway.manifest.build', 'app.manifest.build']),
         fallback: 'https://gateway.manifest.build',
         protocol: 'https',
       });
+      expect(config.baseURL.allowedHosts).toHaveLength(2);
     });
 
     it('adds extra hosts from BETTER_AUTH_ALLOWED_HOSTS, including wildcards', () => {
@@ -515,10 +516,10 @@ describe('auth.instance', () => {
       loadModule();
 
       const config = mockBetterAuth.mock.calls[0][0];
-      expect(config.baseURL.allowedHosts).toEqual([
-        'gateway.manifest.build',
-        'dashboard.manifest.build',
+      expect([...config.baseURL.allowedHosts].sort()).toEqual([
         '*.preview.manifest.build',
+        'dashboard.manifest.build',
+        'gateway.manifest.build',
       ]);
     });
 
@@ -529,9 +530,9 @@ describe('auth.instance', () => {
       loadModule();
 
       const config = mockBetterAuth.mock.calls[0][0];
-      expect(config.baseURL.allowedHosts).toEqual([
-        'gateway.manifest.build',
+      expect([...config.baseURL.allowedHosts].sort()).toEqual([
         'app.manifest.build',
+        'gateway.manifest.build',
       ]);
     });
 
