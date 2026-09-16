@@ -37,13 +37,15 @@ describe('auth redirect helpers', () => {
 
   it('resumes a signed MCP authorization query after sign-in', () => {
     const query =
-      '?client_id=https%3A%2F%2Fclient.test%2Fmetadata&redirect_uri=http%3A%2F%2F127.0.0.1%2Fcallback&ba_param=client_id&ba_param=redirect_uri&sig=abc';
+      '?client_id=https%3A%2F%2Fclient.test%2Fmetadata&redirect_uri=http%3A%2F%2F127.0.0.1%2Fcallback&ba_param=client_id&ba_param=redirect_uri&sig=abc&oauth=failed';
     const destination = signedOAuthDestination(query);
-    expect(destination).toBe(`/api/auth/oauth2/authorize${query}`);
+    expect(destination).toBe(
+      '/api/auth/oauth2/authorize?client_id=https%3A%2F%2Fclient.test%2Fmetadata&redirect_uri=http%3A%2F%2F127.0.0.1%2Fcallback&ba_param=client_id&ba_param=redirect_uri&sig=abc',
+    );
     expect(getAuthDestination({ plan: 'pro' }, query)).toBe(destination);
     expect(buildSocialAuthUrls({}, query)).toEqual({
       callbackURL: destination,
-      errorCallbackURL: `/login?${new URLSearchParams(query.slice(1)).toString()}&oauth=failed`,
+      errorCallbackURL: `/login?${new URLSearchParams(query.slice(1)).toString()}`,
     });
   });
 

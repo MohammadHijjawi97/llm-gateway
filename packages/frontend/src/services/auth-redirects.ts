@@ -27,7 +27,12 @@ export function signedOAuthDestination(rawSearch: string): string | undefined {
   const search = new URLSearchParams(rawSearch);
   if (!search.has('sig') || !search.has('ba_param')) return undefined;
   if (!search.has('client_id') || !search.has('redirect_uri')) return undefined;
-  return `/api/auth/oauth2/authorize?${search.toString()}`;
+  const signedNames = new Set(search.getAll('ba_param'));
+  const signed = new URLSearchParams();
+  for (const [key, value] of search) {
+    if (key === 'sig' || key === 'ba_param' || signedNames.has(key)) signed.append(key, value);
+  }
+  return `/api/auth/oauth2/authorize?${signed.toString()}`;
 }
 
 export function getAuthDestination(searchParams: SearchParams, rawSearch = ''): string {

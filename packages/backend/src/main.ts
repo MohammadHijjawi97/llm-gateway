@@ -215,11 +215,12 @@ export async function bootstrap() {
 
   // Mount Better Auth handler (needs raw body, before express.json)
   const { toNodeHandler } = await import('better-auth/node');
+  const authHandler = (request: Request) =>
+    auth.handler(request).then((response) => mcpOAuthResponse(request, response));
   expressApp.all(
     '/api/auth/*splat',
-    toNodeHandler((request: Request) =>
-      auth.handler(request).then((response) => mcpOAuthResponse(request, response)),
-    ),
+    // Better Auth's adapter checks for a handler property and delegates to it.
+    toNodeHandler({ handler: authHandler } as typeof auth),
   );
 
   // Re-add body parsing for NestJS routes. The OpenAI-compatible proxy has a
