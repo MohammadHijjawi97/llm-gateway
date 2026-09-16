@@ -1,10 +1,11 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen } from '@solidjs/testing-library';
 import { createSignal } from 'solid-js';
 
 const mockNavigate = vi.fn();
 const mockCheckNeedsSetup = vi.fn();
 const mockLocationAssign = vi.fn();
+const originalLocation = window.location;
 let mockSessionData: any = { data: null, isPending: false };
 let mockSearchParams: Record<string, string | string[]> = {};
 let mockLocation = { search: '' };
@@ -39,6 +40,13 @@ describe('GuestGuard', () => {
     Object.defineProperty(window, 'location', {
       configurable: true,
       value: { assign: mockLocationAssign },
+    });
+  });
+
+  afterEach(() => {
+    Object.defineProperty(window, 'location', {
+      configurable: true,
+      value: originalLocation,
     });
   });
 
