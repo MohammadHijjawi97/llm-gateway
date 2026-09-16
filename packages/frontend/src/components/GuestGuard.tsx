@@ -39,7 +39,12 @@ const GuestGuard: ParentComponent = (props) => {
         if (setupChecked()) setReady(true);
         return;
       }
-      navigate(getAuthDestination(searchParams, location.search), { replace: true });
+      const destination = getAuthDestination(searchParams, location.search);
+      if (destination.startsWith('/api/auth/oauth2/authorize')) {
+        window.location.assign(destination);
+      } else {
+        navigate(destination, { replace: true });
+      }
     }
     if (setupChecked() && !s.isPending && !s.data) {
       setReady(true);

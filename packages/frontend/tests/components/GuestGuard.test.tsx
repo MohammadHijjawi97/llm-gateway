@@ -4,6 +4,7 @@ import { createSignal } from 'solid-js';
 
 const mockNavigate = vi.fn();
 const mockCheckNeedsSetup = vi.fn();
+const mockLocationAssign = vi.fn();
 let mockSessionData: any = { data: null, isPending: false };
 let mockSearchParams: Record<string, string | string[]> = {};
 let mockLocation = { search: '' };
@@ -35,6 +36,10 @@ describe('GuestGuard', () => {
     mockSearchParams = {};
     mockLocation = { search: '' };
     mockCheckNeedsSetup.mockResolvedValue(false);
+    Object.defineProperty(window, 'location', {
+      configurable: true,
+      value: { assign: mockLocationAssign },
+    });
   });
 
   it('renders children when no session and setup is complete', async () => {
@@ -151,11 +156,11 @@ describe('GuestGuard', () => {
       </GuestGuard>
     ));
     await vi.waitFor(() => {
-      expect(mockNavigate).toHaveBeenCalledWith(
+      expect(mockLocationAssign).toHaveBeenCalledWith(
         '/api/auth/oauth2/authorize?client_id=client&redirect_uri=http%3A%2F%2F127.0.0.1%2Fcallback&ba_param=client_id&ba_param=redirect_uri&sig=abc',
-        { replace: true },
       );
     });
+    expect(mockNavigate).not.toHaveBeenCalled();
   });
 
   it('lets authenticated users finish the plan step before redirecting', async () => {
