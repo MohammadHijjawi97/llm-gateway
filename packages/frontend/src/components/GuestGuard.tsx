@@ -27,6 +27,11 @@ const GuestGuard: ParentComponent = (props) => {
     const s = session();
     const step = Array.isArray(searchParams.step) ? searchParams.step[0] : searchParams.step;
     if (!s.isPending && s.data) {
+      const destination = getAuthDestination(searchParams, location.search);
+      if (signedOAuthDestination(location.search) === destination) {
+        globalThis.location.assign(destination);
+        return;
+      }
       // An unfinished discovery step outranks the usual destinations:
       // browser Back into the auth pages must land on the form, not fall
       // through to the dashboard.
@@ -39,12 +44,7 @@ const GuestGuard: ParentComponent = (props) => {
         if (setupChecked()) setReady(true);
         return;
       }
-      const destination = getAuthDestination(searchParams, location.search);
-      if (signedOAuthDestination(location.search) === destination) {
-        globalThis.location.assign(destination);
-      } else {
-        navigate(destination, { replace: true });
-      }
+      navigate(destination, { replace: true });
     }
     if (setupChecked() && !s.isPending && !s.data) {
       setReady(true);

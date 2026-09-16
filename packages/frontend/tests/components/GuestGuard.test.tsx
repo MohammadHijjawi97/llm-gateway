@@ -133,6 +133,7 @@ describe('GuestGuard', () => {
 
   it('preserves signed MCP authorization during the authenticated redirect', async () => {
     vi.stubGlobal('location', { assign: mockLocationAssign });
+    localStorage.setItem('manifest_discovery_pending_u1', '/welcome');
     mockSessionData = {
       data: { user: { id: 'u1', name: 'Test' } },
       isPending: false,
