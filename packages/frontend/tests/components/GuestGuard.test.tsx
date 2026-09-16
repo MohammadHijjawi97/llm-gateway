@@ -1,11 +1,10 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen } from '@solidjs/testing-library';
 import { createSignal } from 'solid-js';
 
 const mockNavigate = vi.fn();
 const mockCheckNeedsSetup = vi.fn();
 const mockLocationAssign = vi.fn();
-const originalLocation = window.location;
 let mockSessionData: any = { data: null, isPending: false };
 let mockSearchParams: Record<string, string | string[]> = {};
 let mockLocation = { search: '' };
@@ -37,17 +36,6 @@ describe('GuestGuard', () => {
     mockSearchParams = {};
     mockLocation = { search: '' };
     mockCheckNeedsSetup.mockResolvedValue(false);
-    Object.defineProperty(window, 'location', {
-      configurable: true,
-      value: { assign: mockLocationAssign },
-    });
-  });
-
-  afterEach(() => {
-    Object.defineProperty(window, 'location', {
-      configurable: true,
-      value: originalLocation,
-    });
   });
 
   it('renders children when no session and setup is complete', async () => {
@@ -144,6 +132,7 @@ describe('GuestGuard', () => {
   });
 
   it('preserves signed MCP authorization during the authenticated redirect', async () => {
+    vi.stubGlobal('location', { assign: mockLocationAssign });
     mockSessionData = {
       data: { user: { id: 'u1', name: 'Test' } },
       isPending: false,
@@ -169,6 +158,7 @@ describe('GuestGuard', () => {
       );
     });
     expect(mockNavigate).not.toHaveBeenCalled();
+    vi.unstubAllGlobals();
   });
 
   it('lets authenticated users finish the plan step before redirecting', async () => {
