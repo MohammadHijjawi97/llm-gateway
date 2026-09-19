@@ -34,8 +34,10 @@ describe('plan store', () => {
     mockGetBillingPlan.mockRejectedValueOnce(new Error('boom'));
     await expect(loadPlan()).resolves.toEqual({ enabled: false, plan: 'free' });
     expect(isFreePlan()).toBe(false);
-    // A later boot (store reset) retries instead of serving the failed value.
-    resetPlanStore();
+    // The failed value is never stored: a lookup fired before sign-in (401)
+    // must not decide the plan for the session that signs in right after.
+    expect(planStatus()).toBeNull();
+    // The next load retries instead of serving the failed value.
     mockGetBillingPlan.mockResolvedValue({ enabled: true, plan: 'free' });
     await expect(loadPlan()).resolves.toEqual({ enabled: true, plan: 'free' });
   });

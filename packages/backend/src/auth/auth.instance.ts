@@ -243,6 +243,14 @@ const pluginAuth = betterAuth({
   logger: { level: 'debug' },
   telemetry: { enabled: false },
   plugins: buildPlugins(),
+  session: {
+    // Validate sessions from a signed cookie instead of the database. The two
+    // statements behind a lookup take 0.3 ms, but on the production path they
+    // cost ~0.5 s per call, paid by the browser's get-session probe and by
+    // every SessionGuard cache miss, before any page can load. A revoked
+    // session stays valid for at most maxAge; sign-out clears the cookie.
+    cookieCache: { enabled: true, maxAge: 5 * 60 },
+  },
   account: {
     accountLinking: {
       enabled: true,

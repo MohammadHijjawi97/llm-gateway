@@ -81,6 +81,19 @@ describe('auth.instance', () => {
     expect(config.telemetry).toEqual({ enabled: false });
   });
 
+  it('caches the session in a signed cookie so validation skips the database', () => {
+    // Every authenticated request validates the session. In production the
+    // database round trip behind that costs ~0.5 s per call on the Railway
+    // path even though the statements themselves take 0.3 ms, and it is paid
+    // by the browser's get-session probe and by every SessionGuard cache miss.
+    // The cookie cache answers from the signed cookie until maxAge, so a
+    // revoked session can linger for at most that long.
+    loadModule();
+
+    const config = mockBetterAuth.mock.calls[0][0];
+    expect(config.session).toEqual({ cookieCache: { enabled: true, maxAge: 5 * 60 } });
+  });
+
   it('does not set skipStateCookieCheck in account config', () => {
     loadModule();
 

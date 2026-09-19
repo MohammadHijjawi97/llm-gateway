@@ -24,12 +24,18 @@ let inflight: Promise<BillingPlanStatus> | null = null;
 export function loadPlan(): Promise<BillingPlanStatus> {
   const current = planStatus();
   if (current) return Promise.resolve(current);
+  // Only a real answer is remembered. A failed lookup (a 401 from a probe that
+  // fired before sign-in, a billing hiccup) falls open for this caller but is
+  // retried by the next one, so it can never decide the plan for the session
+  // that signs in right after.
   inflight ??= getBillingPlan()
-    .catch(() => FAIL_OPEN)
     .then((status) => {
       setPlanStatus(status);
-      inflight = null;
       return status;
+    })
+    .catch(() => FAIL_OPEN)
+    .finally(() => {
+      inflight = null;
     });
   return inflight;
 }
