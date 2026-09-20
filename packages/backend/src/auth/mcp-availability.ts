@@ -59,6 +59,11 @@ export function isMcpCapableResource(resource: string): boolean {
   } catch {
     return false;
   }
+  // The library also refuses credentials, a query, and a fragment: the value
+  // is an RFC 8707 resource identifier, so a `?` or `#` anywhere in it is out.
+  if (url.username || url.password || resource.includes('?') || resource.includes('#')) {
+    return false;
+  }
   if (url.protocol === 'https:') return true;
   return url.protocol === 'http:' && isLoopbackHostname(url.hostname);
 }
@@ -90,8 +95,26 @@ export function resolveMcpAvailability(env: NodeJS.ProcessEnv = process.env): Mc
       reason:
         `the MCP resource ${resource} must use HTTPS (loopback HTTP is allowed for ` +
         'development). Serve this install over HTTPS, or set MCP_ENABLED=false to ' +
-        'silence this notice. The dashboard and the gateway are unaffected.',
+        'acknowledge this. The dashboard and the gateway are unaffected.',
     };
   }
   return { enabled: true, reason: null };
+}
+
+let current: McpAvailability | null = null;
+
+/**
+ * The decision for this process, made once from `process.env` on first use and
+ * shared by every caller — the Better Auth plugin list, the module graph, and
+ * the setup-status endpoint — so they cannot disagree, whatever loads `.env`
+ * and when.
+ */
+export function mcpAvailability(): McpAvailability {
+  current ??= resolveMcpAvailability();
+  return current;
+}
+
+/** Test seam: forget the memoized decision so the next call re-reads the env. */
+export function resetMcpAvailability(): void {
+  current = null;
 }

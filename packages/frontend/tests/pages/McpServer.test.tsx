@@ -33,6 +33,13 @@ describe('install-endpoints', () => {
 });
 
 describe('MCP server page', () => {
+  // The panels wait for the setup status, so render and let it resolve.
+  async function renderReady() {
+    const result = render(() => <McpServer />);
+    await waitFor(() => expect(result.container.querySelector('.panel__tab')).not.toBeNull());
+    return result;
+  }
+
   it('explains why the page is empty when the backend runs without MCP', async () => {
     mockMcpEnabled = false;
     try {
@@ -47,14 +54,14 @@ describe('MCP server page', () => {
     }
   });
 
-  it('shows this install own endpoint, not a hardcoded host', () => {
-    const { container } = render(() => <McpServer />);
+  it('shows this install own endpoint, not a hardcoded host', async () => {
+    const { container } = await renderReady();
     expect(container.textContent).toContain(`${window.location.origin}/api/v1/mcp`);
     expect(container.textContent).not.toContain('app.manifest.build');
   });
 
-  it('offers a tab per supported client, with Claude Code selected first', () => {
-    const { container } = render(() => <McpServer />);
+  it('offers a tab per supported client, with Claude Code selected first', async () => {
+    const { container } = await renderReady();
     const tabs = Array.from(container.querySelectorAll('.panel__tab')).map((t) =>
       t.textContent?.trim(),
     );
@@ -64,8 +71,8 @@ describe('MCP server page', () => {
     expect(container.textContent).toContain('claude mcp add --transport http manifest');
   });
 
-  it('swaps the snippet when another client tab is selected', () => {
-    const { container } = render(() => <McpServer />);
+  it('swaps the snippet when another client tab is selected', async () => {
+    const { container } = await renderReady();
     const byLabel = (label: string) =>
       Array.from(container.querySelectorAll('.panel__tab')).find(
         (t) => t.textContent?.trim() === label,
@@ -80,8 +87,8 @@ describe('MCP server page', () => {
     expect(container.textContent).toContain('opencode.ai/config.json');
   });
 
-  it('shows each client logo, sourced from the shared platform map', () => {
-    const { container } = render(() => <McpServer />);
+  it('shows each client logo, sourced from the shared platform map', async () => {
+    const { container } = await renderReady();
     const icons = Array.from(container.querySelectorAll('.panel__tab .panel__tab-icon')).map((i) =>
       i.getAttribute('src'),
     );
@@ -97,8 +104,8 @@ describe('MCP server page', () => {
     }
   });
 
-  it('carries a generic mcpServers block for any other client', () => {
-    const { container } = render(() => <McpServer />);
+  it('carries a generic mcpServers block for any other client', async () => {
+    const { container } = await renderReady();
     const byLabel = (label: string) =>
       Array.from(container.querySelectorAll('.panel__tab')).find(
         (t) => t.textContent?.trim() === label,
@@ -116,8 +123,8 @@ describe('MCP server page', () => {
     }
   });
 
-  it('explains the read-only scope and links to the tool list', () => {
-    const { container } = render(() => <McpServer />);
+  it('explains the read-only scope and links to the tool list', async () => {
+    const { container } = await renderReady();
     expect(container.textContent).toContain('never sees the write');
     const link = container.querySelector('a[href="https://manifest.build/docs/integrations/mcp/"]');
     expect(link).not.toBeNull();

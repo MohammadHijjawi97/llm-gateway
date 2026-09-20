@@ -30,8 +30,9 @@ const Sidebar: Component<SidebarProps> = (props) => {
   // can't reach the user's localhost, so the Local entry is hidden there.
   const [selfHosted] = createResource(checkIsSelfHosted);
   // An install served over plain HTTP cannot host the MCP OAuth resource, so
-  // the backend runs without the endpoint entirely. Hide the page that would
-  // otherwise hand out a URL answering 404.
+  // the backend runs without the endpoint entirely. The entry waits for the
+  // status like the Local one does, rather than appearing and then vanishing
+  // on the installs that don't have it.
   const [mcpEnabled] = createResource(checkMcpEnabled);
   const [billing] = createResource(async () => {
     try {
@@ -139,7 +140,7 @@ const Sidebar: Component<SidebarProps> = (props) => {
           The "New" pills are a showcase device, not structure — delete the two
           spans once these stop being new. n8n joins here when it gets a page. */}
       <div class="sidebar__section-label">INTEGRATIONS</div>
-      <Show when={mcpEnabled() !== false}>
+      <Show when={mcpEnabled()}>
         <A
           href="/integrations/mcp"
           class="sidebar__link"

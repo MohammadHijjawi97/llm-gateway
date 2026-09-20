@@ -32,6 +32,8 @@ function buildMockDataSource(runnerQuery: jest.Mock) {
   };
 }
 
+import { resetMcpAvailability } from '../auth/mcp-availability';
+
 describe('SetupService', () => {
   let runnerQuery: jest.Mock;
   let ds: ReturnType<typeof buildMockDataSource>;
@@ -275,6 +277,7 @@ describe('SetupService', () => {
         savedEnv[k] = process.env[k];
         delete process.env[k];
       }
+      resetMcpAvailability();
     });
 
     afterEach(() => {
@@ -282,6 +285,7 @@ describe('SetupService', () => {
         if (savedEnv[k] === undefined) delete process.env[k];
         else process.env[k] = savedEnv[k];
       }
+      resetMcpAvailability();
     });
 
     it('returns true on an HTTPS origin', () => {
