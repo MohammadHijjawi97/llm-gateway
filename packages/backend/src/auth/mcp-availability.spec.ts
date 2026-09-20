@@ -3,6 +3,7 @@ import {
   isMcpCapableResource,
   mcpAvailability,
   mcpResourceFromEnv,
+  mcpResourceProblem,
   resetMcpAvailability,
   resolveMcpAvailability,
 } from './mcp-availability';
@@ -106,6 +107,27 @@ describe('isMcpCapableResource', () => {
   });
 });
 
+describe('mcpResourceProblem', () => {
+  it.each([
+    ['not a url', 'is not an absolute URL'],
+    ['https://user:pw@mnfst.example.com/api/v1/mcp', 'must not contain credentials'],
+    ['https://mnfst.example.com/api/v1/mcp#frag', 'must not contain a fragment'],
+    ['https://mnfst.example.com/app?tenant=x/api/v1/mcp', 'must not contain a query'],
+    [
+      'http://192.168.1.50:3001/api/v1/mcp',
+      'must use HTTPS (loopback HTTP is allowed for development)',
+    ],
+    ['ftp://example.com/api/v1/mcp', 'must use HTTPS (loopback HTTP is allowed for development)'],
+  ])('names the problem with %s', (resource, problem) => {
+    expect(mcpResourceProblem(resource)).toBe(problem);
+  });
+
+  it('is null for a usable resource', () => {
+    expect(mcpResourceProblem('https://mnfst.example.com/api/v1/mcp')).toBeNull();
+    expect(mcpResourceProblem('http://localhost:3001/api/v1/mcp')).toBeNull();
+  });
+});
+
 describe('resolveMcpAvailability', () => {
   it('enables MCP on an HTTPS origin', () => {
     expect(resolveMcpAvailability({ BETTER_AUTH_URL: 'https://mnfst.example.com' })).toEqual({
@@ -140,6 +162,39 @@ describe('resolveMcpAvailability', () => {
     expect(result.enabled).toBe(false);
     expect(result.reason).toContain('http://manifest.example.internal/api/v1/mcp');
     expect(result.reason).toContain('HTTPS');
+  });
+
+  it('names the real problem for an HTTPS origin with credentials and never logs the secret', () => {
+    const result = resolveMcpAvailability({
+      BETTER_AUTH_URL: 'https://admin:hunter2@mnfst.example.com',
+    });
+    expect(result.enabled).toBe(false);
+    expect(result.reason).toContain('must not contain credentials');
+    expect(result.reason).toContain('https://mnfst.example.com/api/v1/mcp');
+    expect(result.reason).not.toContain('hunter2');
+    expect(result.reason).not.toContain('admin');
+    expect(result.reason).not.toContain('HTTPS (loopback');
+  });
+
+  it('names a query problem rather than blaming the scheme', () => {
+    const result = resolveMcpAvailability({
+      BETTER_AUTH_URL: 'https://mnfst.example.com/app?tenant=x',
+    });
+    expect(result.enabled).toBe(false);
+    expect(result.reason).toContain('must not contain a query');
+  });
+
+  it('does not echo a value that is not an http(s) URL', () => {
+    // `user:secret@host` parses as a `user:` scheme with the secret in its path.
+    const opaque = resolveMcpAvailability({ BETTER_AUTH_URL: 'user:hunter2@host' });
+    expect(opaque.enabled).toBe(false);
+    expect(opaque.reason).toContain('derived from BETTER_AUTH_URL must use HTTPS');
+    expect(opaque.reason).not.toContain('hunter2');
+
+    const junk = resolveMcpAvailability({ BETTER_AUTH_URL: 'not a url' });
+    expect(junk.enabled).toBe(false);
+    expect(junk.reason).toContain('derived from BETTER_AUTH_URL is not an absolute URL');
+    expect(junk.reason).not.toContain('not a url');
   });
 
   it('reports the explicit opt-out even when the origin is also incapable', () => {

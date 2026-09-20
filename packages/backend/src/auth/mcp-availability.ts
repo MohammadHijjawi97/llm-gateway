@@ -47,25 +47,49 @@ function isLoopbackHostname(hostname: string): boolean {
 }
 
 /**
- * Mirrors `@better-auth/mcp`'s own rule for a usable protected-resource URL:
- * HTTPS, or HTTP on loopback for local development. Kept in step with that
- * library deliberately — this predicate exists to answer "would constructing
- * the plugin throw?" without constructing it.
+ * Why `@better-auth/mcp` would refuse this protected-resource URL, or null when
+ * it is usable: an absolute URL with no credentials, fragment, or query (it is
+ * an RFC 8707 resource identifier), over HTTPS, or HTTP on loopback for local
+ * development. Kept in step with that library deliberately, checks in its
+ * order — this exists to answer "would constructing the plugin throw, and
+ * why?" without constructing it.
  */
-export function isMcpCapableResource(resource: string): boolean {
+export function mcpResourceProblem(resource: string): string | null {
   let url: URL;
   try {
     url = new URL(resource);
   } catch {
-    return false;
+    return 'is not an absolute URL';
   }
-  // The library also refuses credentials, a query, and a fragment: the value
-  // is an RFC 8707 resource identifier, so a `?` or `#` anywhere in it is out.
-  if (url.username || url.password || resource.includes('?') || resource.includes('#')) {
-    return false;
+  if (url.username || url.password) return 'must not contain credentials';
+  if (resource.includes('#')) return 'must not contain a fragment';
+  if (resource.includes('?')) return 'must not contain a query';
+  if (url.protocol === 'https:') return null;
+  if (url.protocol === 'http:' && isLoopbackHostname(url.hostname)) return null;
+  return 'must use HTTPS (loopback HTTP is allowed for development)';
+}
+
+export function isMcpCapableResource(resource: string): boolean {
+  return mcpResourceProblem(resource) === null;
+}
+
+/**
+ * The resource as it may be written to a log line. Userinfo is stripped, and a
+ * value that is not an http(s) URL is not echoed at all: `user:secret@host`
+ * parses as a `user:` scheme with the secret in its path.
+ */
+function describeResource(resource: string): string {
+  try {
+    const url = new URL(resource);
+    if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+      return 'derived from BETTER_AUTH_URL';
+    }
+    url.password = '';
+    url.username = '';
+    return url.href;
+  } catch {
+    return 'derived from BETTER_AUTH_URL';
   }
-  if (url.protocol === 'https:') return true;
-  return url.protocol === 'http:' && isLoopbackHostname(url.hostname);
 }
 
 export interface McpAvailability {
@@ -89,13 +113,14 @@ export function resolveMcpAvailability(env: NodeJS.ProcessEnv = process.env): Mc
     return { enabled: false, reason: 'disabled by MCP_ENABLED' };
   }
   const resource = mcpResourceFromEnv(env);
-  if (!isMcpCapableResource(resource)) {
+  const problem = mcpResourceProblem(resource);
+  if (problem) {
     return {
       enabled: false,
       reason:
-        `the MCP resource ${resource} must use HTTPS (loopback HTTP is allowed for ` +
-        'development). Serve this install over HTTPS, or set MCP_ENABLED=false to ' +
-        'acknowledge this. The dashboard and the gateway are unaffected.',
+        `the MCP resource ${describeResource(resource)} ${problem}. Adjust BETTER_AUTH_URL, ` +
+        'or set MCP_ENABLED=false to acknowledge this. The dashboard and the gateway ' +
+        'are unaffected.',
     };
   }
   return { enabled: true, reason: null };

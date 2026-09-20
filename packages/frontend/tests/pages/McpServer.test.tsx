@@ -9,8 +9,9 @@ vi.mock('@solidjs/meta', () => ({
 // MCP is on unless the backend says otherwise — an install served over plain
 // HTTP from a non-loopback host runs without the endpoint entirely.
 let mockMcpEnabled = true;
+let mockCheckMcpEnabled: () => Promise<boolean> = () => Promise.resolve(mockMcpEnabled);
 vi.mock('../../src/services/setup-status.js', () => ({
-  checkMcpEnabled: () => Promise.resolve(mockMcpEnabled),
+  checkMcpEnabled: () => mockCheckMcpEnabled(),
 }));
 
 import McpServer, { clientSetups } from '../../src/pages/integrations/McpServer';
@@ -39,6 +40,23 @@ describe('MCP server page', () => {
     await waitFor(() => expect(result.container.querySelector('.panel__tab')).not.toBeNull());
     return result;
   }
+
+  it('shows neither panel until the status is known', async () => {
+    let settle!: (enabled: boolean) => void;
+    mockCheckMcpEnabled = () => new Promise<boolean>((resolve) => (settle = resolve));
+    try {
+      const { container } = render(() => <McpServer />);
+      // Pending: no endpoint, no client snippets, and no "not available" notice.
+      expect(container.querySelector('.panel__tab')).toBeNull();
+      expect(container.textContent).not.toContain('/api/v1/mcp');
+      expect(container.textContent).not.toContain('Not available on this install');
+      settle(true);
+      await waitFor(() => expect(container.querySelector('.panel__tab')).not.toBeNull());
+      expect(container.textContent).toContain(`${window.location.origin}/api/v1/mcp`);
+    } finally {
+      mockCheckMcpEnabled = () => Promise.resolve(mockMcpEnabled);
+    }
+  });
 
   it('explains why the page is empty when the backend runs without MCP', async () => {
     mockMcpEnabled = false;
