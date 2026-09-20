@@ -37,6 +37,7 @@ import { BillingModule } from './billing/billing.module';
 import { DiscoveryModule } from './discovery/discovery.module';
 import { CrmMetricsModule } from './crm-metrics/crm-metrics.module';
 import { McpModule } from './mcp/mcp.module';
+import { resolveMcpAvailability } from './auth/mcp-availability';
 import { isSelfHosted } from './common/utils/detect-self-hosted';
 import { DebugSentryController } from './sentry/debug-sentry.controller';
 
@@ -75,6 +76,13 @@ const sentryDebugControllers =
 // and answering 401 forever, and pairs with migration 1802200000000 skipping
 // its index so a self-hosted install sees no trace of this feature.
 const crmMetricsImports = isSelfHosted() ? [] : [CrmMetricsModule];
+
+// The remote MCP server is off on installs whose origin cannot carry an MCP
+// resource, and on installs that set MCP_ENABLED=false. Leaving the module
+// unregistered means `/api/v1/mcp` does not exist rather than answering an
+// unauthenticated 401 that no client could ever satisfy — the OAuth
+// authorization server behind it is not running either.
+const mcpImports = resolveMcpAvailability().enabled ? [McpModule] : [];
 
 @Module({
   imports: [
@@ -115,7 +123,7 @@ const crmMetricsImports = isSelfHosted() ? [] : [CrmMetricsModule];
     WaitlistModule,
     BillingModule,
     DiscoveryModule,
-    McpModule,
+    ...mcpImports,
     ...crmMetricsImports,
   ],
   providers: [

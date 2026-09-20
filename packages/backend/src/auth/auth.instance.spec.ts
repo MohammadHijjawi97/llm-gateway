@@ -617,6 +617,52 @@ describe('auth.instance', () => {
     beforeEach(() => {
       mockStripePlugin.mockClear();
       (jest.requireMock('@better-auth/mcp') as { mcp: jest.Mock }).mcp.mockClear();
+      (jest.requireMock('@better-auth/cimd') as { cimd: jest.Mock }).cimd.mockClear();
+    });
+
+    // `mcp()` validates its resource URL as it is constructed and throws for a
+    // non-loopback HTTP origin. Constructing it anyway would take the whole
+    // process down at import time, so a self-hosted install on a plain-HTTP
+    // LAN or tailnet hostname must never reach it (issue #2939).
+    it('omits the MCP and CIMD plugins on a plain-HTTP non-loopback origin', () => {
+      process.env['BETTER_AUTH_URL'] = 'http://manifest.example.internal';
+      const mod = loadModule();
+
+      const { mcp } = jest.requireMock('@better-auth/mcp') as { mcp: jest.Mock };
+      const { cimd } = jest.requireMock('@better-auth/cimd') as { cimd: jest.Mock };
+      expect(mcp).not.toHaveBeenCalled();
+      expect(cimd).not.toHaveBeenCalled();
+      expect(mockBetterAuth.mock.calls[0][0].plugins).toEqual([{ id: 'jwt' }]);
+      expect(mod.mcpEnabled).toBe(false);
+      expect(mod.mcpDisabledReason).toContain('HTTPS');
+    });
+
+    it('omits the MCP and CIMD plugins when MCP_ENABLED opts out', () => {
+      process.env['BETTER_AUTH_URL'] = 'https://manifest.example.com';
+      process.env['MCP_ENABLED'] = 'false';
+      const mod = loadModule();
+
+      const { mcp } = jest.requireMock('@better-auth/mcp') as { mcp: jest.Mock };
+      const { cimd } = jest.requireMock('@better-auth/cimd') as { cimd: jest.Mock };
+      expect(mcp).not.toHaveBeenCalled();
+      expect(cimd).not.toHaveBeenCalled();
+      expect(mockBetterAuth.mock.calls[0][0].plugins).toEqual([{ id: 'jwt' }]);
+      expect(mod.mcpEnabled).toBe(false);
+      expect(mod.mcpDisabledReason).toBe('disabled by MCP_ENABLED');
+    });
+
+    it('keeps the MCP plugins on a loopback development origin', () => {
+      delete process.env['BETTER_AUTH_URL'];
+      process.env['PORT'] = '3001';
+      const mod = loadModule();
+
+      expect(mod.mcpEnabled).toBe(true);
+      expect(mod.mcpDisabledReason).toBeNull();
+      expect(mockBetterAuth.mock.calls[0][0].plugins).toEqual([
+        { id: 'jwt' },
+        { id: 'mcp' },
+        { id: 'cimd' },
+      ]);
     });
 
     it('configures the MCP plugin for the /api/v1/mcp resource with login and consent pages', () => {

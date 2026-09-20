@@ -15,6 +15,7 @@ describe('SetupController', () => {
   let mockIsOllamaAvailable: jest.Mock;
   let mockGetLocalLlmHost: jest.Mock;
   let mockIsEmailConfigured: jest.Mock;
+  let mockIsMcpEnabled: jest.Mock;
 
   beforeEach(async () => {
     mockNeedsSetup = jest.fn();
@@ -24,6 +25,7 @@ describe('SetupController', () => {
     mockIsOllamaAvailable = jest.fn().mockResolvedValue(false);
     mockGetLocalLlmHost = jest.fn().mockReturnValue('localhost');
     mockIsEmailConfigured = jest.fn().mockReturnValue(true);
+    mockIsMcpEnabled = jest.fn().mockReturnValue(true);
 
     const module: TestingModule = await Test.createTestingModule({
       controllers: [SetupController],
@@ -38,6 +40,7 @@ describe('SetupController', () => {
             isOllamaAvailable: mockIsOllamaAvailable,
             getLocalLlmHost: mockGetLocalLlmHost,
             isEmailConfigured: mockIsEmailConfigured,
+            isMcpEnabled: mockIsMcpEnabled,
           },
         },
       ],
@@ -57,6 +60,7 @@ describe('SetupController', () => {
         ollamaAvailable: false,
         localLlmHost: 'localhost',
         emailConfigured: true,
+        mcpEnabled: true,
       });
     });
 
@@ -70,6 +74,7 @@ describe('SetupController', () => {
         ollamaAvailable: false,
         localLlmHost: 'localhost',
         emailConfigured: true,
+        mcpEnabled: true,
       });
     });
 
@@ -84,6 +89,7 @@ describe('SetupController', () => {
         ollamaAvailable: false,
         localLlmHost: 'localhost',
         emailConfigured: true,
+        mcpEnabled: true,
       });
     });
 
@@ -99,6 +105,7 @@ describe('SetupController', () => {
         ollamaAvailable: false,
         localLlmHost: 'localhost',
         emailConfigured: true,
+        mcpEnabled: true,
       });
     });
 
@@ -114,6 +121,7 @@ describe('SetupController', () => {
         ollamaAvailable: true,
         localLlmHost: 'localhost',
         emailConfigured: true,
+        mcpEnabled: true,
       });
     });
 

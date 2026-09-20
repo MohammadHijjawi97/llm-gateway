@@ -1,9 +1,16 @@
 import { describe, it, expect, vi } from 'vitest';
-import { render, fireEvent } from '@solidjs/testing-library';
+import { render, fireEvent, waitFor } from '@solidjs/testing-library';
 
 vi.mock('@solidjs/meta', () => ({
   Title: (props: { children?: unknown }) => <title>{String(props.children ?? '')}</title>,
   Meta: () => null,
+}));
+
+// MCP is on unless the backend says otherwise — an install served over plain
+// HTTP from a non-loopback host runs without the endpoint entirely.
+let mockMcpEnabled = true;
+vi.mock('../../src/services/setup-status.js', () => ({
+  checkMcpEnabled: () => Promise.resolve(mockMcpEnabled),
 }));
 
 import McpServer, { clientSetups } from '../../src/pages/integrations/McpServer';
@@ -26,6 +33,20 @@ describe('install-endpoints', () => {
 });
 
 describe('MCP server page', () => {
+  it('explains why the page is empty when the backend runs without MCP', async () => {
+    mockMcpEnabled = false;
+    try {
+      const { container } = render(() => <McpServer />);
+      await waitFor(() => expect(container.textContent).toContain('Not available on this install'));
+      // No endpoint and no client snippets are offered.
+      expect(container.textContent).not.toContain(`${window.location.origin}/api/v1/mcp`);
+      expect(container.querySelectorAll('.panel__tab')).toHaveLength(0);
+      expect(container.textContent).toContain('MCP_ENABLED=false');
+    } finally {
+      mockMcpEnabled = true;
+    }
+  });
+
   it('shows this install own endpoint, not a hardcoded host', () => {
     const { container } = render(() => <McpServer />);
     expect(container.textContent).toContain(`${window.location.origin}/api/v1/mcp`);

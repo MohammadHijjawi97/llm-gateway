@@ -46,8 +46,12 @@ vi.mock("../../src/services/auth-client.js", () => ({
 // Local nav entry in cloud. Default to self-hosted so the legacy link
 // assertions keep applying; cloud tests flip the flag.
 let mockIsSelfHosted = true;
+// MCP is on by default; an install served over plain HTTP runs without it and
+// the nav entry goes with it.
+let mockMcpEnabled = true;
 vi.mock("../../src/services/setup-status.js", () => ({
   checkIsSelfHosted: () => Promise.resolve(mockIsSelfHosted),
+  checkMcpEnabled: () => Promise.resolve(mockMcpEnabled),
 }));
 
 // Stub the create-harness modal so the Sidebar test stays isolated from the
@@ -166,6 +170,20 @@ describe("Sidebar — global nav links", () => {
       "/integrations/cli",
       "/playground",
     ]);
+  });
+
+  it("hides the MCP entry when the backend runs without the MCP server", async () => {
+    mockMcpEnabled = false;
+    try {
+      const { container } = render(() => <Sidebar />);
+      await waitFor(() =>
+        expect(container.querySelector('a[href="/integrations/mcp"]')).toBeNull(),
+      );
+      // The rest of the Integrations section stays.
+      expect(container.querySelector('a[href="/integrations/cli"]')).not.toBeNull();
+    } finally {
+      mockMcpEnabled = true;
+    }
   });
 
   it("shows the Integrations entries with their New pills", async () => {

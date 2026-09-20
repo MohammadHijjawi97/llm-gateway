@@ -6,9 +6,9 @@ import helmet from 'helmet';
 import compression from 'compression';
 import * as express from 'express';
 import { AppModule } from './app.module';
-import { auth } from './auth/auth.instance';
+import { auth, mcpDisabledReason, mcpEnabled } from './auth/auth.instance';
 import { mcpOAuthResponse } from './auth/mcp-oauth-response';
-import { mountMcpDiscovery } from './mcp/mcp-discovery';
+import { mountMcpDiscovery, mountMcpUnavailable } from './mcp/mcp-discovery';
 import { SpaFallbackFilter } from './common/filters/spa-fallback.filter';
 import { httpErrorLogger } from './common/middleware/http-error-logger.middleware';
 import {
@@ -233,7 +233,16 @@ export async function bootstrap() {
   expressApp.use(express.urlencoded({ extended: true, limit: API_BODY_LIMIT }));
   expressApp.use(bodyParserErrorHandler);
 
-  mountMcpDiscovery(app);
+  // Both the OAuth discovery documents and the MCP module go together: with the
+  // Better Auth MCP plugin unloaded there is no authorization server to
+  // advertise, and publishing metadata for an endpoint that does not exist
+  // sends clients into a flow that cannot complete.
+  if (mcpEnabled) {
+    mountMcpDiscovery(app);
+  } else {
+    mountMcpUnavailable(app);
+    logger.warn(`Remote MCP server disabled: ${mcpDisabledReason}`);
+  }
 
   const port = Number(process.env['PORT'] ?? 3001);
   const host = process.env['BIND_ADDRESS'] ?? '127.0.0.1';

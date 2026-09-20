@@ -265,6 +265,42 @@ describe('SetupService', () => {
     });
   });
 
+  describe('isMcpEnabled', () => {
+    const envKeys = ['BETTER_AUTH_URL', 'MCP_ENABLED'];
+    let savedEnv: Record<string, string | undefined>;
+
+    beforeEach(() => {
+      savedEnv = {};
+      for (const k of envKeys) {
+        savedEnv[k] = process.env[k];
+        delete process.env[k];
+      }
+    });
+
+    afterEach(() => {
+      for (const k of envKeys) {
+        if (savedEnv[k] === undefined) delete process.env[k];
+        else process.env[k] = savedEnv[k];
+      }
+    });
+
+    it('returns true on an HTTPS origin', () => {
+      process.env['BETTER_AUTH_URL'] = 'https://mnfst.example.com';
+      expect(service.isMcpEnabled()).toBe(true);
+    });
+
+    it('returns false on a plain-HTTP non-loopback origin', () => {
+      process.env['BETTER_AUTH_URL'] = 'http://manifest.example.internal';
+      expect(service.isMcpEnabled()).toBe(false);
+    });
+
+    it('returns false when MCP_ENABLED opts out', () => {
+      process.env['BETTER_AUTH_URL'] = 'https://mnfst.example.com';
+      process.env['MCP_ENABLED'] = 'false';
+      expect(service.isMcpEnabled()).toBe(false);
+    });
+  });
+
   describe('needsSetup', () => {
     it('returns true when user table is empty', async () => {
       ds.query.mockResolvedValueOnce([{ count: '0' }]);
