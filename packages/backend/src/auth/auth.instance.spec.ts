@@ -618,6 +618,17 @@ describe('auth.instance', () => {
       mockStripePlugin.mockClear();
       (jest.requireMock('@better-auth/mcp') as { mcp: jest.Mock }).mcp.mockClear();
       (jest.requireMock('@better-auth/cimd') as { cimd: jest.Mock }).cimd.mockClear();
+      // These tests assert the exact plugin list, so the developer's shell must
+      // not be able to flip a branch (MCP_ENABLED=false while testing the
+      // switch, or Stripe keys turning billing on).
+      for (const key of [
+        'MCP_ENABLED',
+        'STRIPE_SECRET_KEY',
+        'STRIPE_WEBHOOK_SECRET',
+        'STRIPE_PRO_PRICE_ID',
+      ]) {
+        delete process.env[key];
+      }
     });
 
     // `mcp()` validates its resource URL as it is constructed and throws for a

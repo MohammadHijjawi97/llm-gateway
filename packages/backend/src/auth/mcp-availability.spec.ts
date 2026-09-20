@@ -1,7 +1,9 @@
 import {
   authOriginFromEnv,
   isMcpCapableResource,
+  mcpAvailability,
   mcpResourceFromEnv,
+  resetMcpAvailability,
   resolveMcpAvailability,
 } from './mcp-availability';
 
@@ -30,18 +32,24 @@ describe('mcpResourceFromEnv', () => {
 });
 
 describe('reading process.env by default', () => {
-  const saved = { url: process.env['BETTER_AUTH_URL'], port: process.env['PORT'] };
+  const keys = ['BETTER_AUTH_URL', 'PORT', 'MCP_ENABLED'] as const;
+  const saved: Partial<Record<(typeof keys)[number], string | undefined>> = {};
 
   beforeEach(() => {
+    for (const key of keys) {
+      saved[key] = process.env[key];
+      delete process.env[key];
+    }
     process.env['BETTER_AUTH_URL'] = 'https://env-default.example.com';
-    delete process.env['PORT'];
+    resetMcpAvailability();
   });
 
   afterEach(() => {
-    if (saved.url === undefined) delete process.env['BETTER_AUTH_URL'];
-    else process.env['BETTER_AUTH_URL'] = saved.url;
-    if (saved.port === undefined) delete process.env['PORT'];
-    else process.env['PORT'] = saved.port;
+    for (const key of keys) {
+      if (saved[key] === undefined) delete process.env[key];
+      else process.env[key] = saved[key];
+    }
+    resetMcpAvailability();
   });
 
   it('authOriginFromEnv reads the ambient environment', () => {
@@ -54,6 +62,20 @@ describe('reading process.env by default', () => {
 
   it('resolveMcpAvailability reads the ambient environment', () => {
     expect(resolveMcpAvailability()).toEqual({ enabled: true, reason: null });
+  });
+
+  it('mcpAvailability decides once per process and hands every caller the same answer', () => {
+    const first = mcpAvailability();
+    process.env['MCP_ENABLED'] = 'false';
+    expect(mcpAvailability()).toBe(first);
+    expect(first).toEqual({ enabled: true, reason: null });
+  });
+
+  it('resetMcpAvailability makes the next call re-read the environment', () => {
+    expect(mcpAvailability().enabled).toBe(true);
+    process.env['MCP_ENABLED'] = 'false';
+    resetMcpAvailability();
+    expect(mcpAvailability()).toEqual({ enabled: false, reason: 'disabled by MCP_ENABLED' });
   });
 });
 
@@ -74,6 +96,10 @@ describe('isMcpCapableResource', () => {
     'http://manifest.tail1234.ts.net/api/v1/mcp',
     'http://128.0.0.1/api/v1/mcp',
     'ftp://example.com/api/v1/mcp',
+    'https://user:pw@mnfst.example.com/api/v1/mcp',
+    'https://user@mnfst.example.com/api/v1/mcp',
+    'https://mnfst.example.com/app?tenant=x/api/v1/mcp',
+    'https://mnfst.example.com/api/v1/mcp#frag',
     'not a url',
   ])('rejects %s', (resource) => {
     expect(isMcpCapableResource(resource)).toBe(false);

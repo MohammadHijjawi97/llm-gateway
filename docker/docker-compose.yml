@@ -69,6 +69,7 @@ services:
       # OAuth callback and session cookie follow the request host, so set this
       # when the same instance answers on more than one domain.
       - BETTER_AUTH_ALLOWED_HOSTS=${BETTER_AUTH_ALLOWED_HOSTS:-}
+      - MCP_ENABLED=${MCP_ENABLED:-}
       # Defaults to the host-installed Ollama. Override in .env if your
       # Ollama runs elsewhere (e.g. on another host on your LAN).
       - OLLAMA_HOST=${OLLAMA_HOST:-http://host.docker.internal:11434}

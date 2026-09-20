@@ -73,7 +73,9 @@ const McpServer: Component = () => {
   const [activeId, setActiveId] = createSignal('claude-code');
   const active = createMemo(() => clients().find((c) => c.id === activeId()) ?? clients()[0]);
   // The nav entry is already hidden when MCP is off, but a bookmark still lands
-  // here. Say why rather than handing out an endpoint that answers 404.
+  // here. Say why rather than handing out an endpoint that answers 404 — and
+  // show neither panel until the answer is in, so a disabled install never
+  // flashes the endpoint first.
   const [enabled] = createResource(checkMcpEnabled);
 
   return (
@@ -105,7 +107,7 @@ const McpServer: Component = () => {
         </div>
       </Show>
 
-      <Show when={enabled() !== false}>
+      <Show when={enabled() === true}>
         <div class="panel">
           <div class="panel__title">Your endpoint</div>
           <p class="integration-panel__desc">

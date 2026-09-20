@@ -50,6 +50,13 @@ describe('SetupController', () => {
   });
 
   describe('getStatus', () => {
+    it('reports mcpEnabled=false when the install runs without the MCP server', async () => {
+      mockNeedsSetup.mockResolvedValue(false);
+      mockIsMcpEnabled.mockReturnValue(false);
+      const result = await controller.getStatus();
+      expect(result.mcpEnabled).toBe(false);
+    });
+
     it('returns needsSetup=true with empty socialProviders in cloud mode', async () => {
       mockNeedsSetup.mockResolvedValue(true);
       const result = await controller.getStatus();

@@ -37,7 +37,7 @@ import { BillingModule } from './billing/billing.module';
 import { DiscoveryModule } from './discovery/discovery.module';
 import { CrmMetricsModule } from './crm-metrics/crm-metrics.module';
 import { McpModule } from './mcp/mcp.module';
-import { resolveMcpAvailability } from './auth/mcp-availability';
+import { mcpAvailability } from './auth/mcp-availability';
 import { isSelfHosted } from './common/utils/detect-self-hosted';
 import { DebugSentryController } from './sentry/debug-sentry.controller';
 
@@ -82,7 +82,7 @@ const crmMetricsImports = isSelfHosted() ? [] : [CrmMetricsModule];
 // unregistered means `/api/v1/mcp` does not exist rather than answering an
 // unauthenticated 401 that no client could ever satisfy — the OAuth
 // authorization server behind it is not running either.
-const mcpImports = resolveMcpAvailability().enabled ? [McpModule] : [];
+const mcpImports = mcpAvailability().enabled ? [McpModule] : [];
 
 @Module({
   imports: [

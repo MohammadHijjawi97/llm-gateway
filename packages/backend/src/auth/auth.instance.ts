@@ -17,7 +17,7 @@ import {
   sendSubscriptionConfirmedEmail,
 } from '../billing/subscription-webhook-emails';
 import { fetchClientMetadataResource } from './cimd-client-metadata-fetch';
-import { authOriginFromEnv, resolveMcpAvailability } from './mcp-availability';
+import { authOriginFromEnv, mcpAvailability } from './mcp-availability';
 import { MCP_READ_SCOPE, MCP_WRITE_SCOPE, MCP_SCOPES } from './mcp-scopes';
 
 const port = process.env['PORT'] ?? '3001';
@@ -44,9 +44,9 @@ export const mcpResource = `${authOrigin}/api/v1/mcp`;
  * install on plain HTTP behind a LAN or tailnet hostname runs without it
  * rather than refusing to boot — see `mcp-availability.ts`.
  */
-const mcpAvailability = resolveMcpAvailability();
-export const mcpEnabled = mcpAvailability.enabled;
-export const mcpDisabledReason = mcpAvailability.reason;
+const mcpDecision = mcpAvailability();
+export const mcpEnabled = mcpDecision.enabled;
+export const mcpDisabledReason = mcpDecision.reason;
 export { MCP_READ_SCOPE, MCP_WRITE_SCOPE, MCP_SCOPES } from './mcp-scopes';
 
 const CLOUD_ORIGINS = ['https://app.manifest.build', 'https://gateway.manifest.build'];
