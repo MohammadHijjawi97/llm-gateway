@@ -126,13 +126,13 @@ export class McpController {
   @Get()
   @Public()
   async rejectGet(@Res() res: Response): Promise<void> {
-    await sendWebResponse(methodNotAllowedResponse(), res);
+    await sendWebResponse(methodNotAllowedResponse(), res, this.logger);
   }
 
   @Delete()
   @Public()
   async rejectDelete(@Res() res: Response): Promise<void> {
-    await sendWebResponse(methodNotAllowedResponse(), res);
+    await sendWebResponse(methodNotAllowedResponse(), res, this.logger);
   }
 
   @Post()
@@ -169,14 +169,14 @@ export class McpController {
         },
       );
       const response = await verify(webRequest);
-      await sendWebResponse(response, res);
+      await sendWebResponse(response, res, this.logger);
     } catch (error) {
       // Log the detail server-side; the OAuth caller gets a constant message so
       // database or infrastructure errors cannot leak through the response.
       this.logger.error(
         `MCP request failed: ${error instanceof Error ? error.stack : String(error)}`,
       );
-      await sendWebResponse(internalErrorResponse(), res);
+      await sendWebResponse(internalErrorResponse(), res, this.logger);
     }
   }
 }
@@ -227,6 +227,21 @@ function isEventStream(response: globalThis.Response): boolean {
   return (response.headers.get('content-type') ?? '').includes('text/event-stream');
 }
 
+/** Pipe failures that only mean the client went away mid-stream. */
+const CLIENT_HANGUP_CODES = new Set([
+  'ERR_STREAM_PREMATURE_CLOSE',
+  'ERR_STREAM_DESTROYED',
+  'ECONNRESET',
+  'EPIPE',
+]);
+
+function isClientHangUp(error: unknown): boolean {
+  // `pipeline` always rejects with a value, so reading the property is safe
+  // even when a stream errored with something that is not an Error.
+  const code = (error as NodeJS.ErrnoException).code;
+  return typeof code === 'string' && CLIENT_HANGUP_CODES.has(code);
+}
+
 /**
  * Write a web Response onto the Express response.
  *
@@ -241,7 +256,11 @@ function isEventStream(response: globalThis.Response): boolean {
  * and the client retried the listen forever. Stream those responses through
  * chunk by chunk instead, and let a client hang-up end the pipe quietly.
  */
-async function sendWebResponse(response: globalThis.Response, res: Response): Promise<void> {
+async function sendWebResponse(
+  response: globalThis.Response,
+  res: Response,
+  logger: Logger,
+): Promise<void> {
   response.headers.forEach((value, key) => res.set(key, value));
   res.status(response.status);
   if (!isEventStream(response) || !response.body) {
@@ -251,8 +270,12 @@ async function sendWebResponse(response: globalThis.Response, res: Response): Pr
   res.flushHeaders();
   try {
     await pipeline(Readable.fromWeb(response.body as NodeReadableStream), res);
-  } catch {
-    // The client closing a listen stream is the normal way one ends; the
-    // response is already committed, so there is nothing left to report.
+  } catch (error) {
+    // A client closing a listen stream is how one normally ends, so that is not
+    // worth a line. Anything else is a real failure, and the status and headers
+    // are already committed, so the log is the only place it can surface.
+    if (!isClientHangUp(error)) {
+      logger.error(`MCP stream failed: ${error instanceof Error ? error.stack : String(error)}`);
+    }
   }
 }
