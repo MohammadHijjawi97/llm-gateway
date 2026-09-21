@@ -7,9 +7,11 @@ import { MigrationInterface, QueryRunner } from 'typeorm';
  * `RequestRecordingRetentionService` (`database/request-recording-retention.service.ts`)
  * selects expired recordings by `recording_key IS NOT NULL AND timestamp <
  * cutoff`. No index carries `recording_key`, so both of its SELECTs are heap
- * scans of the whole `agent_messages` table joined to `requests`. Measured on
- * production on 2026-09-21: 194 s mean, 37.8 GB of buffers per nightly run,
- * for a result of a few thousand rows. Only ~2.4 % of attempts carry a
+ * scans of the whole `agent_messages` table: the global-retention query scans
+ * `agent_messages` alone, the plan-aware one joins `requests` on top of that
+ * scan. The plan-aware query is what was measured on production on 2026-09-21
+ * (its `pg_stat_statements` entry): 194 s mean, 37.8 GB of buffers per nightly
+ * run, for a result of a few thousand rows. Only ~2.4 % of attempts carry a
  * recording (`pg_stats.null_frac = 0.976`), so the partial index holds
  * ~250 k entries and the job's read becomes a short range at its head.
  *
@@ -18,12 +20,20 @@ import { MigrationInterface, QueryRunner } from 'typeorm';
  * `recording_key` are INCLUDEd so the attempt side of the plan-aware query
  * (which joins `requests` only to find the tenant) can be an index-only scan.
  *
+ * Write-path cost: `recording_key` is written by a follow-up UPDATE in
+ * `routing/proxy/attempt-recording.service.ts`, after the attempt row is
+ * INSERTed. Indexing it as both predicate and INCLUDE column makes that UPDATE
+ * non-HOT, so it writes a new tuple into *every* index on `agent_messages`,
+ * not only this one; the trade was taken deliberately against the nightly
+ * 37.8 GB scan. Compare `n_tup_hot_upd / n_tup_upd` in `pg_stat_user_tables`
+ * before and after the deploy to see what it cost.
+ *
  * Built CONCURRENTLY (so `transaction = false`) to avoid the ACCESS EXCLUSIVE
  * lock that deadlocks against live writes during a deploy. Budget minutes on
- * Cloud: two heap passes over the 12 GB table, and it blocks autovacuum on
- * `agent_messages` while it runs. Not gated on deployment mode: the retention
- * job runs on self-hosted too, where the table is small and the build is
- * quick.
+ * Cloud: two heap passes over the 12 GB heap (`pg_relation_size`; 26 GB with
+ * its indexes), and it blocks autovacuum on `agent_messages` while it runs.
+ * Not gated on deployment mode: the retention job runs on self-hosted too,
+ * where the table is small and the build is quick.
  *
  * `npm run migration:revert` passes `--transaction none`, so `down()` runs
  * outside a transaction as CONCURRENTLY requires.
