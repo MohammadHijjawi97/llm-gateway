@@ -79,7 +79,7 @@ const McpServer: Component = () => {
   const [enabled] = createResource(checkMcpEnabled);
 
   return (
-    <div class="account-modal">
+    <div class="container--sm">
       <Title>MCP server - Manifest</Title>
       <Meta
         name="description"
