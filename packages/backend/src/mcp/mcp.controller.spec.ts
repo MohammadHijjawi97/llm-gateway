@@ -270,6 +270,10 @@ describe('McpController', () => {
         (request: unknown) =>
           cb(request, { sub: 'user-1', scope: 'mcp:read' }),
     );
+    const logged: string[] = [];
+    const spy = jest
+      .spyOn(Logger.prototype, 'error')
+      .mockImplementation((message: unknown) => void logged.push(String(message)));
     const { res, waitFor } = makeStreamRes();
 
     const handled = makeController('tenant-1').handle(req, res as never);
@@ -278,7 +282,12 @@ describe('McpController', () => {
       (res as unknown as PassThrough).destroy();
 
       await expect(handled).resolves.toBeUndefined();
+      // "Quietly" is the point: a hang-up code falling out of the allow-list
+      // would still resolve, but it would start logging a failure per
+      // disconnect, which is one line per client that goes away.
+      expect(logged.join('\n')).not.toContain('MCP stream failed');
     } finally {
+      spy.mockRestore();
       (res as unknown as PassThrough).destroy();
     }
   }, 15000);
