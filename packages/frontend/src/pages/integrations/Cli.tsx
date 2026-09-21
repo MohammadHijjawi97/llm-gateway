@@ -38,7 +38,7 @@ const Cli: Component = () => {
   const login = createMemo(() => loginCommand(selfHosted() !== false, installOrigin()));
 
   return (
-    <div class="container--lg">
+    <div class="account-modal">
       <Title>CLI - Manifest</Title>
       <Meta
         name="description"
