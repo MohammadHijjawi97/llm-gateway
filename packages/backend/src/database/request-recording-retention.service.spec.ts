@@ -66,6 +66,9 @@ describe('RequestRecordingRetentionService', () => {
     expect(planQuery![0]).toContain('AND NOT EXISTS');
     expect(planQuery![0]).toContain('AND EXISTS');
     expect(planQuery![0]).toContain("subscription.status IN ('active', 'trialing')");
+    expect(planQuery![0]).toContain(
+      "AND attempt.timestamp < CURRENT_TIMESTAMP - (LEAST($1::int, $2::int) * INTERVAL '1 day')",
+    );
     expect(planQuery![1]).toEqual([7, 365]);
     expect(storage.delete).toHaveBeenCalledWith(expired.storage_key);
     const deleteCall = query.mock.calls.findIndex(([sql]) =>

@@ -24,11 +24,16 @@ const SELECT_ALL_EXPIRED_SQL = `
   ORDER BY timestamp ASC
 `;
 
+// The top-level timestamp bound is implied by the OR below (LEAST($1, $2) is
+// the shorter retention, so the later cutoff), but the planner cannot hoist it
+// out of the OR on its own. Stated explicitly it becomes a range scan on the
+// partial index IDX_agent_messages_recording (migration 1802600000000).
 const SELECT_PLAN_EXPIRED_SQL = `
   SELECT attempt.id AS attempt_id, attempt.recording_key AS storage_key
   FROM agent_messages attempt
   JOIN requests request ON request.id = attempt.request_id
   WHERE attempt.recording_key IS NOT NULL
+    AND attempt.timestamp < CURRENT_TIMESTAMP - (LEAST($1::int, $2::int) * INTERVAL '1 day')
     AND (
     (
       attempt.timestamp < CURRENT_TIMESTAMP - ($1 * INTERVAL '1 day')
