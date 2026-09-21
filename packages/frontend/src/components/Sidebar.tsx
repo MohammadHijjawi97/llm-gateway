@@ -175,7 +175,7 @@ const Sidebar: Component<SidebarProps> = (props) => {
 
       {/* Pivot announcement: shows for everyone in every deployment mode,
           with a per-session dismiss. Replaces the retired Autofix card,
-          which duplicated the notifications. */}
+          which duplicated what notifications already cover. */}
       <PivotAnnouncement />
 
       <Show when={!selfHosted() && showUpgrade()}>

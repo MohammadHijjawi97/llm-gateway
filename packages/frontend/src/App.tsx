@@ -14,6 +14,7 @@ import Sidebar from './components/Sidebar.jsx';
 import AuthGuard from './components/AuthGuard.jsx';
 import VersionIndicator from './components/VersionIndicator.jsx';
 import UsageLimitBanner from './components/UsageLimitBanner.jsx';
+import AutofixBanner from './components/AutofixBanner.jsx';
 import { connectSse } from './services/sse.js';
 import { RightSidebarProvider, useRightSidebar } from './services/right-sidebar.jsx';
 
@@ -81,6 +82,7 @@ const AppInner: ParentComponent = (props) => {
           aria-label="Dashboard content"
         >
           <UsageLimitBanner />
+          <AutofixBanner />
           {props.children}
         </main>
         {rightSidebar()}

@@ -10,7 +10,7 @@
   width: fit-content;
   margin: 0 auto var(--gap-lg);
   padding: 8px 14px;
-  background: url('/banner-autofix-gradient.png') center / 123% no-repeat;
+  background: url('/banner-autofix-gradient.png') center / 180% no-repeat;
   border-radius: var(--radius);
   position: relative;
   overflow: hidden;
