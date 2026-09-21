@@ -1,5 +1,6 @@
 import { McpController } from './mcp.controller';
 import type { Request, Response } from 'express';
+import { PassThrough } from 'node:stream';
 
 jest.mock('../auth/auth.instance', () => ({
   auth: { $context: Promise.resolve({ baseURL: '', internalAdapter: {} }) },
@@ -57,6 +58,27 @@ function makeRes() {
   };
 }
 
+/** A response double that is a real writable, so a streamed body can be observed. */
+function makeStreamRes() {
+  const sink = new PassThrough();
+  const chunks: string[] = [];
+  const firstChunk = new Promise<void>((resolve) => {
+    sink.once('data', () => resolve());
+  });
+  sink.on('data', (chunk: Buffer) => chunks.push(chunk.toString()));
+  const res = sink as unknown as Response & {
+    set: jest.Mock;
+    status: jest.Mock;
+    send: jest.Mock;
+    flushHeaders: jest.Mock;
+  };
+  res.set = jest.fn();
+  res.status = jest.fn().mockReturnValue(res);
+  res.send = jest.fn();
+  res.flushHeaders = jest.fn();
+  return { res, chunks, firstChunk };
+}
+
 const req = {
   method: 'POST',
   headers: {},
@@ -76,7 +98,8 @@ describe('McpController', () => {
     });
     createMcpProtectedRequestHandler.mockImplementation(
       (_options: unknown, cb: (r: unknown, c: unknown) => Promise<Response>) =>
-        (request: unknown) => cb(request, { sub: 'user-1', scope: 'mcp:read' }),
+        (request: unknown) =>
+          cb(request, { sub: 'user-1', scope: 'mcp:read' }),
     );
     const res = makeRes();
     await makeController('tenant-1').handle(req, res as never);
@@ -97,10 +120,103 @@ describe('McpController', () => {
     );
   });
 
+  // `subscriptions/listen` is served over SSE whatever `responseMode` says, and
+  // the client blocks on the ack frame. Buffering the body would hold that
+  // frame until the stream closed — which it never does — so the client timed
+  // out on every listen and stalled the connection behind it.
+  it('streams an SSE body through instead of buffering it to completion', async () => {
+    const encoder = new TextEncoder();
+    let push!: (frame: string) => void;
+    let close!: () => void;
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        push = (frame) => controller.enqueue(encoder.encode(frame));
+        close = () => controller.close();
+      },
+    });
+    createMcpHandler.mockReturnValue({
+      fetch: jest
+        .fn()
+        .mockResolvedValue(
+          new Response(body, { status: 200, headers: { 'content-type': 'text/event-stream' } }),
+        ),
+    });
+    createMcpProtectedRequestHandler.mockImplementation(
+      (_options: unknown, cb: (r: unknown, c: unknown) => Promise<Response>) =>
+        (request: unknown) =>
+          cb(request, { sub: 'user-1', scope: 'mcp:read' }),
+    );
+    const { res, chunks, firstChunk } = makeStreamRes();
+
+    const handled = makeController('tenant-1').handle(req, res as never);
+    push('data: {"method":"notifications/subscriptions/acknowledged"}\n\n');
+    // Resolves only because the ack reached the client while the stream is
+    // still open; a buffering implementation would hang here.
+    await firstChunk;
+
+    expect(chunks.join('')).toContain('subscriptions/acknowledged');
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(res.flushHeaders).toHaveBeenCalled();
+    expect(res.send).not.toHaveBeenCalled();
+
+    close();
+    await handled;
+    // A regression hangs forever, so this still fails; the explicit budget only
+    // stops a loaded CI worker from tripping Jest's 5s default.
+  }, 15000);
+
+  it.each([
+    ['carries no content-type', undefined],
+    ['claims an event stream but has no body', { 'content-type': 'text/event-stream' }],
+  ])('buffers a response that %s', async (_label, headers) => {
+    createMcpHandler.mockReturnValue({
+      fetch: jest.fn().mockResolvedValue(new Response(null, { status: 204, headers })),
+    });
+    createMcpProtectedRequestHandler.mockImplementation(
+      (_options: unknown, cb: (r: unknown, c: unknown) => Promise<Response>) =>
+        (request: unknown) =>
+          cb(request, { sub: 'user-1', scope: 'mcp:read' }),
+    );
+    const res = makeRes();
+
+    await makeController('tenant-1').handle(req, res as never);
+
+    expect(res.status).toHaveBeenCalledWith(204);
+    expect(res.send).toHaveBeenCalledWith('');
+  });
+
+  it('ends quietly when the client hangs up mid-stream', async () => {
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode(': keep-alive\n\n'));
+      },
+    });
+    createMcpHandler.mockReturnValue({
+      fetch: jest
+        .fn()
+        .mockResolvedValue(
+          new Response(body, { status: 200, headers: { 'content-type': 'text/event-stream' } }),
+        ),
+    });
+    createMcpProtectedRequestHandler.mockImplementation(
+      (_options: unknown, cb: (r: unknown, c: unknown) => Promise<Response>) =>
+        (request: unknown) =>
+          cb(request, { sub: 'user-1', scope: 'mcp:read' }),
+    );
+    const { res, firstChunk } = makeStreamRes();
+
+    const handled = makeController('tenant-1').handle(req, res as never);
+    await firstChunk;
+    (res as unknown as PassThrough).destroy();
+
+    await expect(handled).resolves.toBeUndefined();
+  }, 15000);
+
   it('answers 401 with a WWW-Authenticate challenge when the operator is gone', async () => {
     createMcpProtectedRequestHandler.mockImplementation(
       (_options: unknown, cb: (r: unknown, c: unknown) => Promise<Response>) =>
-        (request: unknown) => cb(request, { sub: 'user-1', scope: 'mcp:read' }),
+        (request: unknown) =>
+          cb(request, { sub: 'user-1', scope: 'mcp:read' }),
     );
     const res = makeRes();
     await makeController(null).handle(req, res as never);
