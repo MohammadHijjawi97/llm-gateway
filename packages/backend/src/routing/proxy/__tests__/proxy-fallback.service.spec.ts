@@ -563,6 +563,136 @@ describe('ProxyFallbackService', () => {
       ).rejects.toThrow('boom');
     });
 
+    describe('non-streaming body read', () => {
+      const failingBody = (error: Error) =>
+        new ReadableStream<Uint8Array>({
+          start(controller) {
+            controller.enqueue(new TextEncoder().encode('{"partial":'));
+            controller.error(error);
+          },
+        });
+      const timeoutError = () => {
+        const error = new Error('The operation was aborted due to timeout');
+        error.name = 'TimeoutError';
+        return error;
+      };
+      const forwardOpts = (overrides: Record<string, unknown> = {}) => ({
+        provider: 'OpenAI',
+        apiKey: 'sk-test',
+        model: 'gpt-4o',
+        body,
+        stream: false,
+        sessionKey: 'sess-1',
+        ...overrides,
+      });
+      const attempt = () => ({
+        id: 'attempt-body',
+        attemptNumber: 1,
+        startedAtMs: Date.now(),
+        startedAt: new Date().toISOString(),
+        pendingWrite: Promise.resolve(true),
+      });
+
+      it('buffers a successful body so it stays readable with its status and headers', async () => {
+        providerClient.forward.mockResolvedValue({
+          response: new Response('{"ok":true}', {
+            status: 200,
+            statusText: 'OK',
+            headers: { 'content-type': 'application/json', 'x-upstream': 'yes' },
+          }),
+          isGoogle: false,
+          isAnthropic: false,
+          isChatGpt: false,
+        });
+
+        const result = await service.tryForwardToProvider(forwardOpts());
+
+        expect(result.response.status).toBe(200);
+        expect(result.response.statusText).toBe('OK');
+        expect(result.response.headers.get('x-upstream')).toBe('yes');
+        await expect(result.response.json()).resolves.toEqual({ ok: true });
+      });
+
+      it('turns a timeout during the body read into a 504 that keeps the attempt', async () => {
+        const started = attempt();
+        providerClient.forward.mockResolvedValue({
+          response: new Response(failingBody(timeoutError()), { status: 200 }),
+          isGoogle: false,
+          isAnthropic: false,
+          isChatGpt: true,
+        });
+
+        const result = await service.tryForwardToProvider(
+          forwardOpts({ startProviderAttempt: jest.fn(() => started) }),
+        );
+
+        expect(result.response.status).toBe(504);
+        await expect(result.response.json()).resolves.toEqual({
+          error: { message: 'Upstream provider request timed out' },
+        });
+        expect(result.attempt).toBe(started);
+        expect(result.providerCallStarted).toBe(true);
+        expect(result.isChatGpt).toBe(true);
+      });
+
+      it('turns a dropped socket during the body read into a 503', async () => {
+        providerClient.forward.mockResolvedValue({
+          response: new Response(failingBody(new TypeError('terminated')), { status: 200 }),
+          isGoogle: false,
+          isAnthropic: false,
+          isChatGpt: false,
+        });
+
+        const result = await service.tryForwardToProvider(forwardOpts());
+
+        expect(result.response.status).toBe(503);
+        await expect(result.response.json()).resolves.toEqual({
+          error: { message: 'Failed to reach upstream provider: terminated' },
+        });
+      });
+
+      it('leaves a streaming body untouched', async () => {
+        const response = new Response('data: {}\n\n', { status: 200 });
+        providerClient.forward.mockResolvedValue({
+          response,
+          isGoogle: false,
+          isAnthropic: false,
+          isChatGpt: false,
+        });
+
+        const result = await service.tryForwardToProvider(forwardOpts({ stream: true }));
+
+        expect(result.response).toBe(response);
+        expect(response.bodyUsed).toBe(false);
+      });
+
+      it('rethrows a body-read failure when the client already aborted', async () => {
+        const controller = new AbortController();
+        controller.abort();
+        providerClient.forward.mockResolvedValue({
+          response: new Response(failingBody(timeoutError()), { status: 200 }),
+          isGoogle: false,
+          isAnthropic: false,
+          isChatGpt: false,
+        });
+
+        await expect(
+          service.tryForwardToProvider(forwardOpts({ signal: controller.signal })),
+        ).rejects.toThrow('aborted due to timeout');
+      });
+
+      it('rethrows a body-read failure that is not a transport error', async () => {
+        providerClient.forward.mockResolvedValue({
+          response: new Response(failingBody(new Error('boom')), { status: 200 }),
+          isGoogle: false,
+          isAnthropic: false,
+          isChatGpt: false,
+        });
+
+        await expect(service.tryForwardToProvider(forwardOpts())).rejects.toThrow('boom');
+      });
+    });
+
     it('merges the per-route saved params into the outbound body when the attempt has a configured row', async () => {
       providerClient.forward.mockResolvedValue({
         response: new Response('{}', { status: 200 }),
@@ -916,12 +1046,12 @@ describe('ProxyFallbackService', () => {
     });
 
     it('adds a stable agent-scoped x-opencode-session when the caller sent no session key', async () => {
-      providerClient.forward.mockResolvedValue({
+      providerClient.forward.mockImplementation(async () => ({
         response: new Response('{}', { status: 200 }),
         isGoogle: false,
         isAnthropic: false,
         isChatGpt: false,
-      });
+      }));
 
       const forwardTwice = async () =>
         service.tryForwardToProvider({
@@ -1478,6 +1608,50 @@ describe('ProxyFallbackService', () => {
       expect(result.providerCallStarted).toBe(true);
       expect(attempt).toEqual(expect.objectContaining({ completedAtMs: expect.any(Number) }));
       expect(providerClient.forward).not.toHaveBeenCalled();
+    });
+
+    it('turns a body-read failure on a non-streaming healed retry into a transport failure', async () => {
+      const failing = new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.error(new TypeError('terminated'));
+        },
+      });
+      const attempt = {
+        id: 'attempt-2',
+        attemptNumber: 2,
+        startedAtMs: Date.now(),
+        startedAt: new Date().toISOString(),
+        pendingWrite: Promise.resolve(true),
+      };
+      const retryWireBody = jest.fn().mockResolvedValue({
+        response: new Response(failing, { status: 200 }),
+        isGoogle: false,
+        isAnthropic: false,
+        isChatGpt: false,
+      });
+      const original = {
+        response: new Response('{}', { status: 400 }),
+        isGoogle: false,
+        isAnthropic: false,
+        isChatGpt: false,
+        retryWireBody,
+      };
+
+      const result = await service.retryWireBody(
+        original,
+        { model: 'gpt-4o' },
+        {
+          provider: 'openai',
+          model: 'gpt-4o',
+          authType: 'api_key',
+          stream: false,
+          startProviderAttempt: jest.fn(() => attempt),
+        },
+      );
+
+      expect(result.response.status).toBe(503);
+      expect(result.attempt).toBe(attempt);
+      expect(result.providerCallStarted).toBe(true);
     });
 
     it('records a route cooldown when the healed retry is rate-limited', async () => {

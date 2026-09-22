@@ -186,6 +186,20 @@ export interface ManifestBlockedRequestOpts {
    * still names its surface.
    */
   apiMode?: ProxyApiMode;
+  /**
+   * How the request was classified, when Manifest failed after routing ran (a
+   * post-routing M500). Keeps tier and header-tier filters matching the row.
+   * Provider and model stay unset: the row still claims no provider attempt.
+   */
+  routing?: ManifestBlockedRouting;
+}
+
+export interface ManifestBlockedRouting {
+  tier?: string;
+  specificityCategory?: string;
+  headerTierId?: string;
+  headerTierName?: string;
+  headerTierColor?: string;
 }
 
 export interface PendingRequestOpts {
@@ -866,6 +880,7 @@ export class ProxyMessageRecorder implements OnModuleDestroy {
       durationMs,
       attempt,
       apiMode,
+      routing,
     } = opts;
 
     const canonical = await this.customProviders.canonicalizeAgentMessageKeys(
@@ -887,20 +902,20 @@ export class ProxyMessageRecorder implements OnModuleDestroy {
       error_http_status: httpStatus ?? null,
       model: canonical.model,
       provider: null,
-      routing_tier: null,
+      routing_tier: routing?.tier ?? null,
       routing_reason: reason,
       fallback_from_model: null,
       fallback_index: null,
       auth_type: null,
-      specificity_category: null,
+      specificity_category: routing?.specificityCategory ?? null,
       provider_key_label: null,
       tenant_provider_id: null,
       caller_attribution: callerAttribution ?? null,
       request_headers: requestHeaders ?? null,
       request_params: null,
-      header_tier_id: null,
-      header_tier_name: null,
-      header_tier_color: null,
+      header_tier_id: routing?.headerTierId ?? null,
+      header_tier_name: routing?.headerTierName ?? null,
+      header_tier_color: routing?.headerTierColor ?? null,
     });
     // An M302 patched retry is real provider work even when Manifest ultimately
     // returns its friendly stub; finish that pending Attempt from the audit.

@@ -1508,6 +1508,94 @@ describe('ProxyController', () => {
     });
   });
 
+  describe('post-routing M500 rows', () => {
+    const failAfterRouting = (meta: Record<string, unknown>) => {
+      proxyService.proxyRequest.mockResolvedValue({
+        forward: {
+          response: new Response('data: {}\n\n', {
+            status: 200,
+            headers: { 'Content-Type': 'text/event-stream' },
+          }),
+          isGoogle: false,
+          isAnthropic: false,
+          isChatGpt: true,
+        },
+        meta,
+      });
+      (providerClient as Record<string, jest.Mock>).collectChatGptSseResponse = jest
+        .fn()
+        .mockImplementation(() => {
+          throw new Error('adapter bug');
+        });
+    };
+
+    it('keeps the tier and header tier the request was routed through', async () => {
+      failAfterRouting({
+        tier: 'standard',
+        model: 'gpt-5.3-codex',
+        provider: 'openai',
+        confidence: 0.8,
+        reason: 'header-match',
+        specificity_category: 'coding',
+        header_tier_id: 'header-tier-1',
+        header_tier_name: 'Program Weeks',
+        header_tier_color: 'indigo',
+      });
+      const manifestSpy = jest.spyOn(recorder, 'recordManifestBlockedRequest');
+
+      const req = mockRequest({ messages: [{ role: 'user', content: 'test' }] });
+      const { res } = mockResponse();
+      await controller.chatCompletions(req as never, res as never);
+      await flushRecorderMicrotasks();
+
+      expect(manifestSpy).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          errorCode: 'M500',
+          routing: {
+            tier: 'standard',
+            specificityCategory: 'coding',
+            headerTierId: 'header-tier-1',
+            headerTierName: 'Program Weeks',
+            headerTierColor: 'indigo',
+          },
+        }),
+      );
+      expect(mockMessageRepo.insert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          error_code: 'M500',
+          provider: null,
+          routing_tier: 'standard',
+          specificity_category: 'coding',
+          header_tier_id: 'header-tier-1',
+          header_tier_name: 'Program Weeks',
+          header_tier_color: 'indigo',
+        }),
+      );
+    });
+
+    it("does not stamp a friendly stub's placeholder tier", async () => {
+      failAfterRouting({
+        tier: 'simple',
+        model: 'manifest',
+        provider: 'manifest',
+        confidence: 1,
+        reason: 'manifest_internal_error',
+      });
+      const manifestSpy = jest.spyOn(recorder, 'recordManifestBlockedRequest');
+
+      const req = mockRequest({ messages: [{ role: 'user', content: 'test' }] });
+      const { res } = mockResponse();
+      await controller.chatCompletions(req as never, res as never);
+      await flushRecorderMicrotasks();
+
+      expect(manifestSpy).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.not.objectContaining({ routing: expect.anything() }),
+      );
+    });
+  });
+
   it('should record message with zero tokens when response reports zero usage', async () => {
     const responseBody = {
       choices: [{ message: { content: 'hello' } }],

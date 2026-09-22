@@ -715,6 +715,7 @@ export class ProxyController {
           status,
           err.code,
           startTime == null ? undefined : Date.now() - startTime,
+          meta,
         );
       }
     } else if (
@@ -735,6 +736,7 @@ export class ProxyController {
         status,
         'M500',
         startTime == null ? undefined : Date.now() - startTime,
+        meta,
       );
     } else {
       this.recorder
@@ -927,6 +929,7 @@ export class ProxyController {
     httpStatus?: number,
     errorCode?: ManifestErrorCode,
     durationMs?: number,
+    meta?: RoutingMeta,
   ): void {
     const body = req.body as Record<string, unknown> | undefined;
     this.recorder
@@ -945,6 +948,19 @@ export class ProxyController {
         requestHeaders,
         durationMs,
         apiMode,
+        // A friendly stub's meta is a placeholder (provider 'manifest', tier
+        // 'simple'), not a routing decision, so only a real route stamps tiers.
+        ...(meta && meta.provider !== 'manifest'
+          ? {
+              routing: {
+                tier: meta.tier,
+                specificityCategory: meta.specificity_category,
+                headerTierId: meta.header_tier_id,
+                headerTierName: meta.header_tier_name,
+                headerTierColor: meta.header_tier_color,
+              },
+            }
+          : {}),
       })
       .catch((e) => this.logger.warn(`Failed to record Manifest-blocked request: ${e}`));
   }

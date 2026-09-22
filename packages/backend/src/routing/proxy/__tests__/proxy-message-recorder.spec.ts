@@ -821,6 +821,33 @@ describe('ProxyMessageRecorder', () => {
       });
     });
 
+    it('stamps the routing classification of a post-routing failure without claiming a provider', async () => {
+      await recorder.recordManifestBlockedRequest(ctx, {
+        errorMessage: 'adapter bug',
+        errorCode: 'M500',
+        reason: 'manifest_internal_error',
+        httpStatus: 500,
+        routing: {
+          tier: 'standard',
+          specificityCategory: 'coding',
+          headerTierId: 'header-tier-1',
+          headerTierName: 'Program Weeks',
+          headerTierColor: 'indigo',
+        },
+      });
+
+      expect(insertMock.mock.calls[0][0]).toMatchObject({
+        error_code: 'M500',
+        provider: null,
+        auth_type: null,
+        routing_tier: 'standard',
+        specificity_category: 'coding',
+        header_tier_id: 'header-tier-1',
+        header_tier_name: 'Program Weeks',
+        header_tier_color: 'indigo',
+      });
+    });
+
     it('leaves error_code null when a Manifest row carries no documented code', async () => {
       await recorder.recordManifestBlockedRequest(ctx, {
         errorMessage: 'something went sideways',
