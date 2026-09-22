@@ -189,7 +189,8 @@ export interface ManifestBlockedRequestOpts {
   /**
    * How the request was classified, when Manifest failed after routing ran (a
    * post-routing M500). Keeps tier and header-tier filters matching the row.
-   * Provider and model stay unset: the row still claims no provider attempt.
+   * Provider stays null (the row still claims no provider attempt); the
+   * requested model is still recorded in the model field.
    */
   routing?: ManifestBlockedRouting;
 }

@@ -681,6 +681,71 @@ describe('ProxyFallbackService', () => {
         ).rejects.toThrow('aborted due to timeout');
       });
 
+      it('ends the attempt when the body finishes, not when headers arrive', async () => {
+        const started = attempt();
+        const slowBody = new ReadableStream<Uint8Array>({
+          start(controller) {
+            setTimeout(() => {
+              controller.enqueue(new TextEncoder().encode('{}'));
+              controller.close();
+            }, 30);
+          },
+        });
+        providerClient.forward.mockResolvedValue({
+          response: new Response(slowBody, { status: 200 }),
+          isGoogle: false,
+          isAnthropic: false,
+          isChatGpt: false,
+        });
+        const before = Date.now();
+
+        await service.tryForwardToProvider(
+          forwardOpts({ startProviderAttempt: jest.fn(() => started) }),
+        );
+
+        expect(
+          (started as { completedAtMs?: number }).completedAtMs! - before,
+        ).toBeGreaterThanOrEqual(25);
+      });
+
+      it('rethrows a non-transport body failure with the attempt still attached', async () => {
+        const started = attempt();
+        const retryWireBody = jest.fn().mockResolvedValue({
+          response: new Response(failingBody(new Error('boom')), { status: 200 }),
+          isGoogle: false,
+          isAnthropic: false,
+          isChatGpt: false,
+        });
+        const original = {
+          response: new Response('{}', { status: 400 }),
+          isGoogle: false,
+          isAnthropic: false,
+          isChatGpt: false,
+          retryWireBody,
+        };
+
+        const error = await service
+          .retryWireBody(
+            original,
+            { model: 'gpt-4o' },
+            {
+              provider: 'openai',
+              model: 'gpt-4o',
+              authType: 'api_key',
+              stream: false,
+              startProviderAttempt: jest.fn(() => started),
+            },
+          )
+          .catch((err: unknown) => err);
+
+        expect(error).toBeInstanceOf(Error);
+        expect((started as { completedAtMs?: number }).completedAtMs).toEqual(expect.any(Number));
+        const tagged = Object.getOwnPropertySymbols(error as object).map(
+          (sym) => (error as Record<symbol, unknown>)[sym],
+        );
+        expect(tagged).toContain(started);
+      });
+
       it('rethrows a body-read failure that is not a transport error', async () => {
         providerClient.forward.mockResolvedValue({
           response: new Response(failingBody(new Error('boom')), { status: 200 }),
@@ -1650,6 +1715,9 @@ describe('ProxyFallbackService', () => {
       );
 
       expect(result.response.status).toBe(503);
+      await expect(result.response.json()).resolves.toEqual({
+        error: { message: 'Failed to reach upstream provider: terminated' },
+      });
       expect(result.attempt).toBe(attempt);
       expect(result.providerCallStarted).toBe(true);
     });

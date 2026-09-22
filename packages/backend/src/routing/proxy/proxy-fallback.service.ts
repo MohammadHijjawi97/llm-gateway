@@ -580,10 +580,12 @@ export class ProxyFallbackService {
     forward: ForwardResult,
     opts: { stream?: boolean; signal?: AbortSignal; provider: string; model: string },
   ): Promise<ForwardResult> {
-    const { response } = forward;
+    const { response, attempt } = forward;
     if (opts.stream !== false || !response.ok || !response.body) return forward;
     try {
       const body = await response.arrayBuffer();
+      // The attempt ends when its body does, not when headers arrived.
+      if (attempt) attempt.completedAtMs = Date.now();
       return {
         ...forward,
         response: new Response(body, {
@@ -593,7 +595,13 @@ export class ProxyFallbackService {
         }),
       };
     } catch (error) {
-      if (opts.signal?.aborted || !isTransportError(error)) throw error;
+      if (attempt) attempt.completedAtMs = Date.now();
+      if (opts.signal?.aborted || !isTransportError(error)) {
+        if (attempt && error instanceof Error) {
+          (error as AttemptTaggedError)[PROVIDER_ATTEMPT_REF] = attempt;
+        }
+        throw error;
+      }
       const failureResponse = buildTransportErrorResponse(error);
       this.logger.warn(
         `Provider body read failure: provider=${opts.provider} model=${opts.model} status=${failureResponse.status} message=${describeTransportError(error)}`,
