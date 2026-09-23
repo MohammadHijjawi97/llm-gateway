@@ -2567,6 +2567,45 @@ describe('ProxyFallbackService', () => {
         expect(result.failures[0]).toMatchObject({ provider: 'anthropic', status: 502 });
       });
 
+      it('ends the stalled hop attempt when warm-up fails and moves on', async () => {
+        providerClient.forward
+          .mockResolvedValueOnce(streamForward(stalledStream()) as never)
+          .mockResolvedValueOnce(streamForward(dataStream('data: ok\n\n')) as never);
+        const attempts: Array<{ id: string; startedAtMs: number; completedAtMs?: number }> = [];
+        const startProviderAttempt = jest.fn(() => {
+          const attempt = { id: `attempt-${attempts.length + 1}`, startedAtMs: Date.now() };
+          attempts.push(attempt);
+          return attempt;
+        });
+
+        const result = await service.tryFallbacks(
+          'agent-1',
+          'tenant-1',
+          ['claude-sonnet-4', 'gpt-4.1'],
+          { ...body, stream: true },
+          true,
+          'sess-1',
+          'gpt-4o',
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          'chat_completions',
+          undefined,
+          routes,
+          undefined,
+          startProviderAttempt as never,
+        );
+
+        expect(result.success!.provider).toBe('openai');
+        expect(result.failures).toHaveLength(1);
+        expect(result.failures[0]).toMatchObject({ provider: 'anthropic', status: 502 });
+        expect(result.failures[0].attempt).toBe(attempts[0]);
+        // The stalled attempt ends when warm-up gives up on it.
+        expect(attempts[0].completedAtMs).toEqual(expect.any(Number));
+      });
+
       it('keeps a healthy fallback stream intact', async () => {
         const forward = streamForward(dataStream('data: one\n\ndata: two\n\n'), {
           wireRequestBody: { model: 'claude-sonnet-4' },
