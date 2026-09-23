@@ -50,6 +50,13 @@ describe('formatManifestError', () => {
     expect(out).toContain('{dashboardUrl}');
   });
 
+  it('renders M101 as a missing default model, not missing providers (#2942)', () => {
+    const out = formatManifestError('M101', { dashboardUrl: 'https://dash.example/routing' });
+    expect(out).toContain('[🦚 Manifest M101]');
+    expect(out).toContain('This harness has no model to route to yet. Pick a default model here');
+    expect(out).toContain('https://dash.example/routing');
+  });
+
   it('renders M102 for unusable subscription credentials', () => {
     const out = formatManifestError('M102', {
       provider: 'openai',
@@ -62,7 +69,8 @@ describe('formatManifestError', () => {
 
   it('appends the docs URL exactly once', () => {
     const out = formatManifestError('M500');
-    const matches = out.match(/https:\/\/manifest\.build\/llm-gateway\/docs\/errors\/M500\//g) ?? [];
+    const matches =
+      out.match(/https:\/\/manifest\.build\/llm-gateway\/docs\/errors\/M500\//g) ?? [];
     expect(matches).toHaveLength(1);
   });
 

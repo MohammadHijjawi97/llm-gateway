@@ -32,8 +32,9 @@ export const MANIFEST_ERRORS = {
     template: 'No {provider} API key yet. Add one here: {dashboardUrl}',
   },
   M101: {
-    title: 'No providers configured',
-    template: "You're connected, but no providers are set up yet. Add one here: {dashboardUrl}",
+    title: 'No model to route to',
+    template:
+      'This harness has no model to route to yet. Pick a default model here: {dashboardUrl}',
   },
   M102: {
     title: 'Provider subscription credentials unusable',
