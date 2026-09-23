@@ -255,6 +255,8 @@ describe('ProxyMessageRecorder', () => {
         pendingWrite: Promise.reject(new Error('insert failed')),
       };
 
+      updateMock.mockResolvedValue({});
+
       await recorder.cancelPendingProviderAttempts([written, inFlight, neverInserted]);
 
       expect(updateMock).toHaveBeenCalledTimes(2);
@@ -271,6 +273,27 @@ describe('ProxyMessageRecorder', () => {
       expect(updateMock).toHaveBeenCalledWith(
         { id: 'attempt-in-flight', status: 'pending' },
         expect.objectContaining({ status: 'cancelled', duration_ms: expect.any(Number) }),
+      );
+    });
+
+    it('keeps cancelling the other Attempts when one update fails', async () => {
+      const attempt = (id: string): ProviderAttemptRef => ({
+        id,
+        attemptNumber: 1,
+        startedAtMs: 1_000,
+        startedAt: '1970-01-01T00:00:01.000Z',
+        completedAtMs: 1_100,
+        pendingWrite: Promise.resolve(true),
+      });
+      updateMock.mockRejectedValueOnce(new Error('db down')).mockResolvedValueOnce({});
+
+      await expect(
+        recorder.cancelPendingProviderAttempts([attempt('first'), attempt('second')]),
+      ).resolves.toBeUndefined();
+
+      expect(updateMock).toHaveBeenCalledWith(
+        { id: 'second', status: 'pending' },
+        expect.objectContaining({ status: 'cancelled' }),
       );
     });
 

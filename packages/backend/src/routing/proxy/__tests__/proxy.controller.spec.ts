@@ -3235,7 +3235,8 @@ describe('ProxyController', () => {
 
       const [primaryId, cooldownId, fallbackId] = attemptIds;
       expect(cancelledSpy).toHaveBeenCalledTimes(1);
-      // The last attempt is completed by recordCancelledRequest itself.
+      // recordCancelledRequest completes the last attempt; the sweep's
+      // pending-guarded update on it is then a no-op.
       expect(mockMessageRepo.update).toHaveBeenCalledWith(
         { id: fallbackId },
         expect.objectContaining({ status: 'cancelled' }),
@@ -3251,17 +3252,19 @@ describe('ProxyController', () => {
         ([criteria]) => (criteria as { id: string }).id,
       );
       expect(touched).not.toContain(cooldownId);
-      expect(touched.filter((id) => id === fallbackId)).toHaveLength(1);
     });
 
-    it('still ends the request when cancelling leftover attempts fails', async () => {
+    it('cancels the last attempt when recordCancelledRequest fails to write it', async () => {
       let closeListener: (() => void) | undefined;
-      const warnSpy = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
-      jest.spyOn(recorder, 'cancelPendingProviderAttempts').mockRejectedValue(new Error('db down'));
+      jest.spyOn(recorder, 'recordCancelledRequest').mockRejectedValue(new Error('db down'));
+      let lastId: string | undefined;
       proxyService.proxyRequest.mockImplementation(
         async (options: { startProviderAttempt: StartProviderAttempt }) => {
           options.startProviderAttempt({ provider: 'openai', model: 'gpt-4o' });
-          options.startProviderAttempt({ provider: 'deepseek', model: 'deepseek-v4-flash' });
+          lastId = options.startProviderAttempt({
+            provider: 'deepseek',
+            model: 'deepseek-v4-flash',
+          }).id;
           closeListener?.();
           throw new DOMException('This operation was aborted', 'AbortError');
         },
@@ -3276,11 +3279,11 @@ describe('ProxyController', () => {
         res as never,
       );
 
-      expect(warnSpy).toHaveBeenCalledWith(
-        expect.stringContaining('Failed to cancel pending Provider Attempts'),
+      expect(mockMessageRepo.update).toHaveBeenCalledWith(
+        { id: lastId, status: 'pending' },
+        expect.objectContaining({ status: 'cancelled' }),
       );
       expect(rateLimiter.releaseSlot).toHaveBeenCalled();
-      warnSpy.mockRestore();
     });
 
     it('should emit a terminal SSE error when the upstream dies after the first chunk', async () => {

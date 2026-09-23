@@ -741,22 +741,27 @@ export class ProxyMessageRecorder implements OnModuleDestroy {
    * middle of the fallback chain throws out of the chain before its local
    * failure list reaches a terminal writer, so these rows would otherwise stay
    * `pending` forever. Only rows still pending are touched: a terminal write
-   * that already landed keeps its real outcome.
+   * that already landed keeps its real outcome. Updates run in parallel and a
+   * failed one never stops the rest.
    */
   async cancelPendingProviderAttempts(attempts: ProviderAttemptRef[]): Promise<void> {
-    for (const attempt of attempts) {
-      if (!(await attempt.pendingWrite.catch(() => false))) continue;
-      await this.messageRepo.update(
-        { id: attempt.id, status: PENDING_STATUS },
-        {
-          status: CANCELLED_STATUS,
-          error_message: null,
-          error_code: null,
-          error_http_status: null,
-          duration_ms: Math.max(0, (attempt.completedAtMs ?? Date.now()) - attempt.startedAtMs),
-        },
-      );
-    }
+    await Promise.all(
+      attempts.map(async (attempt) => {
+        if (!(await attempt.pendingWrite.catch(() => false))) return;
+        await this.messageRepo
+          .update(
+            { id: attempt.id, status: PENDING_STATUS },
+            {
+              status: CANCELLED_STATUS,
+              error_message: null,
+              error_code: null,
+              error_http_status: null,
+              duration_ms: Math.max(0, (attempt.completedAtMs ?? Date.now()) - attempt.startedAtMs),
+            },
+          )
+          .catch((e) => this.logger.warn(`Failed to cancel Provider Attempt ${attempt.id}: ${e}`));
+      }),
+    );
   }
 
   /** Complete an intermediate provider call that is retried below the proxy layer. */
