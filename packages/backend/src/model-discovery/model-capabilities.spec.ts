@@ -90,6 +90,19 @@ describe('resolveModelCapabilityMetadata', () => {
     expect(resolved.modelsDevEntry).not.toBeNull();
   });
 
+  it('prefers modalities the provider stated over models.dev', async () => {
+    modelsDevSync.lookupModelCapabilities.mockReturnValue(makeModelsDevEntry());
+
+    const resolved = await resolveModelCapabilityMetadata(
+      makeModel({ inputModalities: ['text'], outputModalities: ['text', 'audio'] }),
+      paramSpecs,
+      modelsDevSync,
+    );
+
+    expect(resolved.inputModalities).toEqual(['text']);
+    expect(resolved.outputModalities).toEqual(['text', 'audio']);
+  });
+
   it('leaves everything undefined when no source knows the model', async () => {
     const resolved = await resolveModelCapabilityMetadata(
       makeModel({ id: 'mystery', provider: 'kiro' }),

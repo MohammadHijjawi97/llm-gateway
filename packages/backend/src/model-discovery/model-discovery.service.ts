@@ -16,7 +16,10 @@ import { DiscoveredModel, DEFAULT_CONTEXT_WINDOW } from './model-fetcher';
 import { decryptWithAny, getDecryptionSecrets } from '../common/utils/crypto.util';
 import { computeQualityScore } from '../database/quality-score.util';
 import { PricingSyncService } from '../database/pricing-sync.service';
-import { ModelsDevSyncService } from '../database/models-dev-sync.service';
+import {
+  ModelsDevSyncService,
+  type ModelsDevModelEntry,
+} from '../database/models-dev-sync.service';
 import { parseOAuthTokenBlob } from '../routing/oauth/core';
 import { getQwenCompatibleBaseUrl, isQwenResolvedEndpoint } from '../routing/qwen-region';
 import {
@@ -666,19 +669,26 @@ export class ModelDiscoveryService {
     return matches.length === 1 ? matches[0] : undefined;
   }
 
+  /**
+   * Modality authority: the provider's own /models response, then models.dev,
+   * then the curated list. Capability lists are positive facts and merge from
+   * every source.
+   */
   private enrichModel(model: DiscoveredModel, providerId: string): DiscoveredModel {
-    // Fill modality gaps from the curated list before enrichment, so
-    // provider-native and models.dev modalities (applied below) still win.
-    const knownModalities = lookupKnownModalities(providerId, model.id);
-    if (knownModalities) {
-      model = {
-        ...model,
-        inputModalities: model.inputModalities ?? knownModalities.input,
-        outputModalities: model.outputModalities ?? knownModalities.output,
-        capabilities: mergeModelCapabilities(model.capabilities, knownModalities.capabilities),
-      };
-    }
+    const known = lookupKnownModalities(providerId, model.id);
+    if (!known) return this.enrichFromCatalogs(model, providerId);
+    const enriched = this.enrichFromCatalogs(
+      { ...model, capabilities: mergeModelCapabilities(model.capabilities, known.capabilities) },
+      providerId,
+    );
+    return {
+      ...enriched,
+      inputModalities: enriched.inputModalities ?? known.input,
+      outputModalities: enriched.outputModalities ?? known.output,
+    };
+  }
 
+  private enrichFromCatalogs(model: DiscoveredModel, providerId: string): DiscoveredModel {
     // Skip pricing enrichment when both prices are already set (price=0 for free/subscription)
     // but still apply capability flags from models.dev for better scoring
     if (
@@ -750,12 +760,7 @@ export class ModelDiscoveryService {
           displayName: capabilityEntry.name || mdEntry.name || modelWithMetadataName.displayName,
           capabilityReasoning: capabilityEntry.reasoning ?? model.capabilityReasoning,
           capabilityCode: capabilityEntry.toolCall ?? model.capabilityCode,
-          ...(capabilityEntry.inputModalities
-            ? { inputModalities: capabilityEntry.inputModalities }
-            : {}),
-          ...(capabilityEntry.outputModalities
-            ? { outputModalities: capabilityEntry.outputModalities }
-            : {}),
+          ...providerModalitiesFirst(model, capabilityEntry),
           capabilities: mergeModelCapabilities(
             model.capabilities,
             capabilityEntry.capabilities,
@@ -806,8 +811,7 @@ export class ModelDiscoveryService {
       ...model,
       capabilityReasoning: mdEntry.reasoning ?? model.capabilityReasoning,
       capabilityCode: mdEntry.toolCall ?? model.capabilityCode,
-      ...(mdEntry.inputModalities ? { inputModalities: mdEntry.inputModalities } : {}),
-      ...(mdEntry.outputModalities ? { outputModalities: mdEntry.outputModalities } : {}),
+      ...providerModalitiesFirst(model, mdEntry),
       capabilities: mergeModelCapabilities(
         model.capabilities,
         mdEntry.capabilities,
@@ -832,4 +836,17 @@ export class ModelDiscoveryService {
 /** Unknown modalities (no list) count as text so the model is kept. */
 function carriesText(modalities: readonly ModelModality[] | undefined): boolean {
   return !modalities || modalities.includes('text');
+}
+
+/** Modalities the provider stated win; models.dev only fills the gaps. */
+function providerModalitiesFirst(
+  model: DiscoveredModel,
+  entry: Pick<ModelsDevModelEntry, 'inputModalities' | 'outputModalities'>,
+): Pick<DiscoveredModel, 'inputModalities' | 'outputModalities'> {
+  const inputModalities = model.inputModalities ?? entry.inputModalities;
+  const outputModalities = model.outputModalities ?? entry.outputModalities;
+  return {
+    ...(inputModalities ? { inputModalities } : {}),
+    ...(outputModalities ? { outputModalities } : {}),
+  };
 }

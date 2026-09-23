@@ -302,6 +302,57 @@ describe('ModelDiscoveryService', () => {
       expect(result[0].outputModalities).toEqual(['text', 'image']);
     });
 
+    it('should prefer provider-stated modalities over models.dev on both enrichment paths', async () => {
+      const mdEntry = {
+        id: 'x',
+        name: 'X',
+        toolCall: true,
+        inputPricePerToken: 0.000001,
+        outputPricePerToken: 0.000002,
+        inputModalities: ['text'],
+        outputModalities: ['text'],
+      };
+      mockModelsDevSync.lookupModel.mockReturnValue(mdEntry);
+      mockModelsDevSync.lookupModelCapabilities.mockReturnValue(mdEntry);
+      fetcher.fetch.mockResolvedValue([
+        // Already priced: capabilities come from applyCapabilities.
+        makeModel({
+          id: 'priced-vision',
+          inputPricePerToken: 0,
+          outputPricePerToken: 0,
+          inputModalities: ['text', 'image'],
+        }),
+        // Unpriced: models.dev prices it and supplies capabilities.
+        makeModel({ id: 'unpriced-vision', inputModalities: ['text', 'image'] }),
+        // The provider says audio out only, so it is not a chat model.
+        makeModel({ id: 'speech-only', outputModalities: ['audio'] }),
+      ]);
+
+      const result = await service.discoverModels(makeProvider());
+
+      expect(result.map((m) => [m.id, m.inputModalities, m.outputModalities])).toEqual([
+        ['priced-vision', ['text', 'image'], ['text']],
+        ['unpriced-vision', ['text', 'image'], ['text']],
+      ]);
+    });
+
+    it('should prefer models.dev modalities over the curated known-modalities list', async () => {
+      mockModelsDevSync.lookupModelCapabilities.mockReturnValue({
+        id: 'gpt-5.3-codex-spark',
+        name: 'Spark',
+        toolCall: true,
+        inputModalities: ['text', 'image'],
+        outputModalities: ['text'],
+      });
+      fetcher.fetch.mockResolvedValue([
+        makeModel({ id: 'gpt-5.3-codex-spark', inputPricePerToken: 0, outputPricePerToken: 0 }),
+      ]);
+
+      const result = await service.discoverModels(makeProvider());
+
+      expect(result[0].inputModalities).toEqual(['text', 'image']);
+    });
+
     it('should enrich models with openRouter pricing when available', async () => {
       mockPricingSync.lookupPricing.mockImplementation((key: string) => {
         if (key === 'openai/gpt-4') {
@@ -1401,11 +1452,23 @@ describe('ModelDiscoveryService', () => {
       // Regression for #2963: Groq's allam-2-7b is a text chat model that
       // models.dev marks toolCall=false. It must stay in the catalog, flagged
       // as unable to call tools, rather than silently disappear.
+      const entries: Record<string, unknown> = {
+        'allam-2-7b': {
+          id: 'allam-2-7b',
+          name: 'ALLaM 2 7B',
+          toolCall: false,
+          capabilities: ['text'],
+        },
+        'openai/gpt-oss-20b': {
+          id: 'openai/gpt-oss-20b',
+          name: 'GPT OSS 20B',
+          toolCall: true,
+          capabilities: ['text', 'tools'],
+        },
+      };
       mockModelsDevSync.lookupModelCapabilities.mockImplementation(
         (providerId: string, modelId: string) =>
-          providerId === 'groq' && modelId === 'allam-2-7b'
-            ? { id: 'allam-2-7b', name: 'ALLaM 2 7B', toolCall: false }
-            : null,
+          providerId === 'groq' ? (entries[modelId] ?? null) : null,
       );
 
       fetcher.fetch.mockResolvedValue([
@@ -1415,10 +1478,13 @@ describe('ModelDiscoveryService', () => {
 
       const result = await service.discoverModels(makeProvider({ provider: 'groq' }));
 
-      expect(result.map((m) => m.id)).toEqual(['allam-2-7b', 'openai/gpt-oss-20b']);
-      const allam = result.find((m) => m.id === 'allam-2-7b');
-      expect(allam?.capabilityCode).toBe(false);
-      expect(allam?.capabilities ?? []).not.toContain('tools');
+      // Both stay; enrichment tells them apart on tool support.
+      expect(
+        result.map((m) => [m.id, m.capabilityCode, m.capabilities?.includes('tools')]),
+      ).toEqual([
+        ['allam-2-7b', false, false],
+        ['openai/gpt-oss-20b', true, true],
+      ]);
     });
 
     it('should drop models whose resolved modalities carry no text', async () => {

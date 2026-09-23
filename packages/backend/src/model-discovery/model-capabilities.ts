@@ -152,8 +152,9 @@ export async function resolveModelCapabilityMetadata(
     (providerId, modelId) => modelsDevSync.lookupModelCapabilities(providerId, modelId),
   );
   const metadataProvider = metadata.provider ?? model.provider;
-  // Curated facts are the last resort, and applying them here (not only at
-  // discovery time) means stale cached_models still resolve correctly.
+  // Modalities the provider stated in its own /models response win; models.dev
+  // fills gaps. Curated facts are the last resort, and applying them here (not
+  // only at discovery time) means stale cached_models still resolve correctly.
   const known = lookupKnownModalities(metadataProvider, metadata.model);
   return {
     capabilities: mergeModelCapabilities(
@@ -163,8 +164,8 @@ export async function resolveModelCapabilityMetadata(
       modelSupportsStreaming(metadataProvider, metadata.model) ? ['stream'] : undefined,
       known?.capabilities,
     ),
-    inputModalities: modelsDevEntry?.inputModalities ?? model.inputModalities ?? known?.input,
-    outputModalities: modelsDevEntry?.outputModalities ?? model.outputModalities ?? known?.output,
+    inputModalities: model.inputModalities ?? modelsDevEntry?.inputModalities ?? known?.input,
+    outputModalities: model.outputModalities ?? modelsDevEntry?.outputModalities ?? known?.output,
     modelsDevEntry,
   };
 }
