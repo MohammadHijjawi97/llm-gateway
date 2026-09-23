@@ -13,10 +13,6 @@ const apiMocks = vi.hoisted(() => ({
   getCustomProviders: vi.fn(),
   getGlobalProviders: vi.fn(),
   getGlobalProviderUsage: vi.fn(),
-  getAgentProviders: vi.fn(),
-  disconnectProvider: vi.fn(),
-  renameProviderKey: vi.fn(),
-  refreshModels: vi.fn(),
   disconnectConnection: vi.fn(),
   renameConnection: vi.fn(),
   refreshConnectionModels: vi.fn(),
@@ -69,15 +65,10 @@ vi.mock('../../src/services/api.js', async () => {
     getGlobalProviderUsage: (...args: unknown[]) => apiMocks.getGlobalProviderUsage(...args),
     // Real merge so the page's config+usage join stays under test.
     mergeUsage: providers.mergeUsage,
-    disconnectProvider: (...args: unknown[]) => apiMocks.disconnectProvider(...args),
   };
 });
 
 vi.mock('../../src/services/api/routing.js', () => ({
-  getProviders: (...args: unknown[]) => apiMocks.getAgentProviders(...args),
-  disconnectProvider: (...args: unknown[]) => apiMocks.disconnectProvider(...args),
-  renameProviderKey: (...args: unknown[]) => apiMocks.renameProviderKey(...args),
-  refreshModels: (...args: unknown[]) => apiMocks.refreshModels(...args),
   disconnectConnection: (...args: unknown[]) => apiMocks.disconnectConnection(...args),
   renameConnection: (...args: unknown[]) => apiMocks.renameConnection(...args),
   refreshConnectionModels: (...args: unknown[]) => apiMocks.refreshConnectionModels(...args),
@@ -750,10 +741,6 @@ beforeEach(() => {
   ]);
   apiMocks.getGlobalProviders.mockResolvedValue(providersResponse);
   apiMocks.getGlobalProviderUsage.mockResolvedValue(usageFrom(providersResponse));
-  apiMocks.getAgentProviders.mockResolvedValue([]);
-  apiMocks.disconnectProvider.mockResolvedValue({ notifications: [] });
-  apiMocks.renameProviderKey.mockResolvedValue(undefined);
-  apiMocks.refreshModels.mockResolvedValue(undefined);
   apiMocks.disconnectConnection.mockResolvedValue({ ok: true, notifications: [] });
   apiMocks.renameConnection.mockResolvedValue(undefined);
   apiMocks.refreshConnectionModels.mockResolvedValue({ ok: true });
@@ -1460,19 +1447,6 @@ describe('ConnectionDetail (analytics)', () => {
     fireEvent.click(screen.getByText('Done'));
   });
 
-  it('falls back to an empty provider list when the routing call rejects', async () => {
-    // Harness list loads, but the per-harness provider fetch rejects → the
-    // inline manage modal still opens normally.
-    apiMocks.getAgentProviders.mockRejectedValue(new Error('providers down'));
-
-    render(() => <ConnectionDetail />);
-    await waitFor(() => expect(screen.getAllByText('Default').length).toBeGreaterThan(0));
-
-    fireEvent.click(screen.getByText('Manage'));
-    expect(screen.getByText('Connection name')).toBeDefined();
-    fireEvent.click(screen.getByText('Done'));
-  });
-
   it('swallows storage failures across chart and filter persistence', async () => {
     const getItem = vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
       throw new Error('storage blocked');
@@ -1677,6 +1651,23 @@ describe('ConnectionDetail (analytics)', () => {
 
     await waitFor(() => expect(apiMocks.refreshConnectionModels).toHaveBeenCalled());
     expect(toastMock.success).toHaveBeenCalledWith('Models refreshed');
+  });
+
+  it('hides model refresh for a custom provider in the fallback modal', async () => {
+    // No harness → the custom-provider form can't load, so the generic modal
+    // shows. Discovery skips custom providers, so offering refresh would lie.
+    apiMocks.getAgents.mockResolvedValue({ agents: [] });
+    routerState.params = { connectionId: 'conn-custom' };
+    apiMocks.getConnectionDetail.mockResolvedValue({
+      ...connectionDetail,
+      connection: { ...connectionDetail.connection, id: 'conn-custom', provider: 'custom:cp-1' },
+    });
+    render(() => <ConnectionDetail />);
+    await openManageModal();
+
+    expect(screen.getByText('Connection name')).toBeDefined();
+    expect(screen.queryByText('Refresh models')).toBeNull();
+    expect(screen.getByText('Disconnect')).toBeDefined();
   });
 
   it('closes the manage modal when Escape is pressed on the overlay', async () => {

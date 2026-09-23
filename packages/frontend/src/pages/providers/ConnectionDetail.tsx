@@ -1306,14 +1306,17 @@ const ConnectionDetail: Component = () => {
                             <span style="font-size: var(--font-size-sm); color: hsl(var(--muted-foreground));">
                               {c.cached_model_count ?? 0} models
                             </span>
-                            <button
-                              class="btn btn--outline btn--sm"
-                              disabled={refreshingModels()}
-                              onClick={handleRefreshModels}
-                              style="display: inline-flex; align-items: center; gap: 6px;"
-                            >
-                              {refreshingModels() ? 'Refreshing...' : 'Refresh models'}
-                            </button>
+                            {/* Custom provider models are entered by hand; discovery skips them. */}
+                            <Show when={!isCustomProvider()}>
+                              <button
+                                class="btn btn--outline btn--sm"
+                                disabled={refreshingModels()}
+                                onClick={handleRefreshModels}
+                                style="display: inline-flex; align-items: center; gap: 6px;"
+                              >
+                                {refreshingModels() ? 'Refreshing...' : 'Refresh models'}
+                              </button>
+                            </Show>
                           </div>
 
                           {/* Connection info */}
