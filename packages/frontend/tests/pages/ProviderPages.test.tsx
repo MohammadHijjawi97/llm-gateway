@@ -58,10 +58,17 @@ vi.mock('../../src/components/ProviderIcon.jsx', () => ({
     providerId === 'openai' ? <span data-testid="provider-icon" /> : null,
 }));
 
-vi.mock('../../src/services/providers.js', () => ({
+vi.mock('../../src/services/providers.js', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../src/services/providers.js')>()),
   PROVIDERS: [
     { id: 'openai', name: 'OpenAI', supportsSubscription: true },
     { id: 'anthropic', name: 'Anthropic', supportsSubscription: true },
+    {
+      id: 'gemini',
+      name: 'Google',
+      supportsSubscription: true,
+      subscriptionClosedNote: 'No new Google sign-ins.',
+    },
     { id: 'groq', name: 'Groq' },
     { id: 'ollama', name: 'Ollama', localOnly: true },
   ],
@@ -330,6 +337,41 @@ describe('provider pages', () => {
 
     fireEvent.click(screen.getByText('Old Claude').closest('tr')!);
     expect(mockNavigate).toHaveBeenCalledWith('/providers/connections/sub-old-claude');
+  });
+
+  it('keeps a provider closed to new subscriptions out of the catalog until connected', async () => {
+    render(() => <Subscriptions />);
+    await waitFor(() => expect(screen.getByText('Supported subscription providers')).toBeDefined());
+    expect(screen.queryByText('Google')).toBeNull();
+  });
+
+  it('keeps an existing connection to a closed provider listed and reachable', async () => {
+    mockGetGlobalProviders.mockResolvedValue({
+      ...globalProvidersResponse,
+      providers: [
+        ...globalProvidersResponse.providers,
+        {
+          provider: 'gemini',
+          auth_type: 'subscription',
+          connection_count: 1,
+          connections: [connection('sub-google', 'Work Google')],
+          total_models: 3,
+          consumption_tokens: 0,
+          consumption_messages: 0,
+          consumption_cost: 0,
+          last_used_at: null,
+          sparkline_7d: [],
+        },
+      ],
+    });
+
+    render(() => <Subscriptions />);
+
+    await waitFor(() => expect(screen.getByText('Work Google')).toBeDefined());
+    // Once in the connections table, once in the catalog.
+    expect(screen.getAllByText('Google').length).toBe(2);
+    fireEvent.click(screen.getByText('Work Google').closest('tr')!);
+    expect(mockNavigate).toHaveBeenCalledWith('/providers/connections/sub-google');
   });
 
   it('deep-links the connect modal to a specific provider when added from its row', async () => {

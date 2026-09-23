@@ -191,8 +191,13 @@ const OAuthDetailView: Component<Props> = (props) => {
       setPasteError(null);
       await oauthApi().submitCallback(code, state);
       finishOAuthSuccess();
-    } catch {
-      setPasteError('Failed to exchange token. The URL may have expired. Try logging in again.');
+    } catch (err) {
+      // The server's message says what went wrong; keep a generic hint as fallback.
+      setPasteError(
+        err instanceof Error && err.message
+          ? err.message
+          : 'Failed to exchange token. The URL may have expired. Try logging in again.',
+      );
     } finally {
       props.setBusy(false);
     }
