@@ -55,6 +55,7 @@ import { AddAgentMessagesRecordingIndex1802600000000 } from './migrations/180260
 import { AddAgentMessagesAutofixAttemptIndex1802700000000 } from './migrations/1802700000000-AddAgentMessagesAutofixAttemptIndex';
 import { AddAgentUsageDaily1802800000000 } from './migrations/1802800000000-AddAgentUsageDaily';
 import { AddAgentMessagesDirectUsageIndex1802900000000 } from './migrations/1802900000000-AddAgentMessagesDirectUsageIndex';
+import { CoverRequestsLogFilters1803000000000 } from './migrations/1803000000000-CoverRequestsLogFilters';
 import { InitialSchema1771464895790 } from './migrations/1771464895790-InitialSchema';
 import { HashApiKeys1771500000000 } from './migrations/1771500000000-HashApiKeys';
 import { ModelPricingImprovements1771600000000 } from './migrations/1771600000000-ModelPricingImprovements';
@@ -348,4 +349,5 @@ export const migrations = [
   AddAgentMessagesAutofixAttemptIndex1802700000000,
   AddAgentUsageDaily1802800000000,
   AddAgentMessagesDirectUsageIndex1802900000000,
+  CoverRequestsLogFilters1803000000000,
 ];
