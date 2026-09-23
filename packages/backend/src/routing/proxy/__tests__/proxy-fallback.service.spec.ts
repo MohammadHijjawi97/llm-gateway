@@ -1,6 +1,7 @@
 import { Logger } from '@nestjs/common';
 import { Repository } from 'typeorm';
 import { ProxyFallbackService, normalizeProviderModel } from '../proxy-fallback.service';
+import { CREDENTIAL_REJECTION_COOLDOWN_MS } from '../credential-rejection-cooldown';
 import { resolveApiKey } from '../oauth-credentials';
 import { ProviderKeyService } from '../../routing-core/provider-key.service';
 import { CustomProvider } from '../../../entities/custom-provider.entity';
@@ -402,6 +403,8 @@ describe('ProxyFallbackService', () => {
     );
 
     describe('stale credentials (401)', () => {
+      afterEach(() => jest.restoreAllMocks());
+
       const unauthorized = () => ({
         response: new Response('unauthorized', { status: 401 }),
         isGoogle: false,
@@ -456,6 +459,29 @@ describe('ProxyFallbackService', () => {
               'anthropic rejected the credential with a 401 and it is skipped for now. Reconnect or replace it if this continues.',
           },
         });
+      });
+
+      it('tries the credential again once the cooldown has passed', async () => {
+        const start = Date.now();
+        const now = jest.spyOn(Date, 'now').mockReturnValue(start);
+        providerClient.forward.mockImplementation(async () => unauthorized());
+        await service.tryForwardToProvider(byokRoute());
+
+        now.mockReturnValue(start + CREDENTIAL_REJECTION_COOLDOWN_MS);
+        await service.tryForwardToProvider(byokRoute());
+
+        expect(providerClient.forward).toHaveBeenCalledTimes(2);
+        expect(providerClient.forward.mock.calls[1][0].apiKey).toBe('sk-revoked');
+      });
+
+      it('still tries the same credential for another model', async () => {
+        providerClient.forward.mockResolvedValueOnce(unauthorized()).mockResolvedValueOnce(ok());
+        await service.tryForwardToProvider(byokRoute());
+
+        const result = await service.tryForwardToProvider(byokRoute({ model: 'claude-haiku-4' }));
+
+        expect(providerClient.forward).toHaveBeenCalledTimes(2);
+        expect(result.response.status).toBe(200);
       });
 
       it('tries a replaced API key at once', async () => {

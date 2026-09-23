@@ -95,7 +95,10 @@ import {
   type RouteCredentialDeps,
 } from './route-credentials';
 import { recordingResponseFromText } from './attempt-recording-capture';
-import { CredentialRejectionCooldown } from './credential-rejection-cooldown';
+import {
+  CredentialRejectionCooldown,
+  type RejectedCredentialRef,
+} from './credential-rejection-cooldown';
 
 // Fallback cooldown applied when an upstream 429 carries no usable Retry-After.
 // Kept short (15s) on purpose: many providers rate-limit on brief RPM/burst
@@ -765,12 +768,14 @@ export class ProxyFallbackService {
     };
   }
 
-  private credentialRef(opts: ForwardProviderOptions, secret: string) {
+  private credentialRef(opts: ForwardProviderOptions, secret: string): RejectedCredentialRef {
     return {
       tenantId: opts.tenantId,
+      connectionId: opts.tenantProviderId,
       provider: opts.provider,
       authType: opts.authType,
       keyLabel: opts.providerKeyLabel,
+      model: opts.model,
       secret,
     };
   }

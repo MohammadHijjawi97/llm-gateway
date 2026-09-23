@@ -8,7 +8,9 @@ const ref = (overrides: Partial<RejectedCredentialRef> = {}): RejectedCredential
   tenantId: 'tenant-1',
   provider: 'openai',
   authType: 'subscription',
+  connectionId: 'connection-1',
   keyLabel: 'Work',
+  model: 'gpt-5.4',
   secret: 'access-token-1',
   ...overrides,
 });
@@ -39,7 +41,7 @@ describe('CredentialRejectionCooldown', () => {
     expect(cooldown.rejectedUntil(ref({ secret: 'access-token-2' }))).toBeNull();
   });
 
-  it('scopes a rejection to one tenant, provider, auth type and label', () => {
+  it('scopes a rejection to one tenant, connection, provider, auth type, label and model', () => {
     const cooldown = new CredentialRejectionCooldown(60_000, 10, clock);
     cooldown.reject(ref());
 
@@ -47,12 +49,14 @@ describe('CredentialRejectionCooldown', () => {
     expect(cooldown.rejectedUntil(ref({ provider: 'anthropic' }))).toBeNull();
     expect(cooldown.rejectedUntil(ref({ authType: 'api_key' }))).toBeNull();
     expect(cooldown.rejectedUntil(ref({ keyLabel: 'Personal' }))).toBeNull();
-    expect(cooldown.rejectedUntil(ref({ provider: 'OpenAI' }))).not.toBeNull();
+    expect(cooldown.rejectedUntil(ref({ connectionId: 'connection-2' }))).toBeNull();
+    expect(cooldown.rejectedUntil(ref({ model: 'gpt-5.4-mini' }))).toBeNull();
+    expect(cooldown.rejectedUntil(ref({ provider: 'OpenAI', model: 'GPT-5.4' }))).not.toBeNull();
   });
 
-  it('treats a missing auth type and label as their own scope', () => {
+  it('treats a missing connection, auth type and label as their own scope', () => {
     const cooldown = new CredentialRejectionCooldown(60_000, 10, clock);
-    const bare = ref({ authType: undefined, keyLabel: undefined });
+    const bare = ref({ connectionId: null, authType: undefined, keyLabel: undefined });
     cooldown.reject(bare);
 
     expect(cooldown.rejectedUntil(bare)).not.toBeNull();
