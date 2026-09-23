@@ -13,13 +13,8 @@ import {
   TIER_SLOTS,
   TierSlot,
 } from 'manifest-shared';
-import {
-  effectiveRoute,
-  explicitRoute,
-  readFallbackRoutes,
-  unambiguousRoute,
-  routeMatches,
-} from './route-helpers';
+import { effectiveRoute, readFallbackRoutes, routeMatches } from './route-helpers';
+import { describeUnresolvedModel, resolveModelRoute } from './resolve-model-route';
 import { assertStreamableResponseMode } from './response-mode-guard';
 
 @Injectable()
@@ -99,39 +94,20 @@ export class TierService {
     providerKeyLabel?: string,
   ): Promise<TierAssignment> {
     const available = await this.discoveryService.getModelsForAgent(tenantId, agentId);
-    const matches = available.filter((m) => m.id === model);
-    if (matches.length === 0) {
-      const providerHint = provider ? ` (provider: ${provider})` : '';
-      const options = available.map((m) => m.id).slice(0, 20);
+    // Accept any name Manifest publishes for the model (the public
+    // `/v1/models` id, a custom model's bare name, …) and store the canonical
+    // route, so callers never have to know the internal id.
+    const resolution = resolveModelRoute(model, available, {
+      provider,
+      authType,
+      keyLabel: providerKeyLabel,
+    });
+    if (!resolution.ok) {
       throw new BadRequestException(
-        `Model "${model}" is not in this agent's discovered model list${providerHint}. ` +
-          `Connect the appropriate provider first, or choose from: ${options.join(', ')}${
-            available.length > options.length ? ', …' : ''
-          }`,
+        describeUnresolvedModel(model, resolution.reason, available, provider),
       );
     }
-    if (provider) {
-      const providerLower = provider.toLowerCase();
-      const providerMatches = matches.some((m) => m.provider.toLowerCase() === providerLower);
-      if (!providerMatches) {
-        throw new BadRequestException(
-          `Model "${model}" is not offered by provider "${provider}" for this agent.`,
-        );
-      }
-    }
-
-    // Build the route. Prefer the explicit triple if the caller passed it,
-    // otherwise resolve from discovery. Throw on ambiguous because we have
-    // no legacy column to fall back to anymore — the caller must disambiguate.
-    const route =
-      explicitRoute(model, provider, authType, providerKeyLabel) ??
-      unambiguousRoute(model, available, providerKeyLabel);
-    if (!route) {
-      throw new BadRequestException(
-        `Model "${model}" is offered by multiple providers — pass an explicit ` +
-          `provider + authType so the route is unambiguous.`,
-      );
-    }
+    const route = resolution.route;
 
     const existing = await this.tierRepo.findOne({
       where: { agent_id: agentId, tier },
@@ -387,14 +363,14 @@ export class TierService {
         pool.splice(kept, 1);
         continue;
       }
-      const route = unambiguousRoute(m, available);
-      if (!route) {
+      const resolution = resolveModelRoute(m, available);
+      if (!resolution.ok) {
         throw new BadRequestException(
           `Cannot resolve fallback model "${m}" to a single connected provider. ` +
             `Pass an explicit (provider, authType, model) route, or connect exactly one provider that offers this model.`,
         );
       }
-      resolved.push(route);
+      resolved.push(resolution.route);
     }
     return resolved;
   }

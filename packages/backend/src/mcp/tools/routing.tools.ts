@@ -5,6 +5,7 @@ import { authOrigin } from '../../auth/auth.instance';
 import { McpOperator, MCP_WRITE_SCOPE } from '../mcp-auth';
 import { McpToolDeps } from '../tool-deps';
 import { result } from '../tool-result';
+import { matchesModelName } from '../../routing/routing-core/resolve-model-route';
 
 const AUTH_TYPES = ['api_key', 'subscription', 'local'] as const;
 const ROUTE_TEST_TIMEOUT_MS = 120_000;
@@ -444,12 +445,13 @@ export function registerRoutingTools(
               const primary = models[0];
               const fallbacks = models.slice(1);
               if (!force) {
-                const known = new Set(
-                  (await deps.modelDiscovery.getModelsForAgent(agent.tenant_id, agent.id)).map(
-                    (m) => m.id,
-                  ),
+                const available = await deps.modelDiscovery.getModelsForAgent(
+                  agent.tenant_id,
+                  agent.id,
                 );
-                const missing = models.filter((m) => !known.has(m));
+                const missing = models.filter(
+                  (name) => !available.some((m) => matchesModelName(m, name)),
+                );
                 if (missing.length > 0) {
                   throw new Error(
                     `Not in the models discovered for "${agentName}": ${missing.join(', ')}. ` +
