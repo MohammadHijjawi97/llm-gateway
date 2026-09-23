@@ -960,6 +960,27 @@ describe('ProviderService — route-only cleanup paths', () => {
       }
     });
 
+    it('renames a key at tenant scope when no agent is given', async () => {
+      providerRepo.find.mockResolvedValue([
+        {
+          id: 'target',
+          provider: 'openai',
+          auth_type: 'api_key',
+          label: 'Key 2',
+          is_active: true,
+        },
+      ]);
+      tierRepo.find.mockResolvedValue([]);
+      specRepo.find.mockResolvedValue([]);
+      headerTierRepo.find.mockResolvedValue([]);
+
+      const renamed = await svc.renameKey(null, 'tenant-1', 'openai', 'api_key', 'Key 2', 'New');
+
+      expect(renamed.label).toBe('New');
+      expect(routingCache.invalidateAgent).not.toHaveBeenCalledWith(null);
+      expect(routingCache.invalidateTenant).toHaveBeenCalledWith('tenant-1');
+    });
+
     it('blocks full provider disconnect while header tiers route to it', async () => {
       providerRepo.find.mockResolvedValue([
         {

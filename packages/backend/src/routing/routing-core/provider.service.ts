@@ -545,7 +545,7 @@ export class ProviderService {
   }
 
   async renameKey(
-    agentId: string,
+    agentId: string | null,
     tenantId: string,
     provider: string,
     authType: AuthType,
@@ -569,7 +569,7 @@ export class ProviderService {
     target.updated_at = new Date().toISOString();
     await this.providerRepo.save(target);
     await this.relabelOverrides(tenantId, provider, authType, previousLabel, trimmed);
-    this.routingCache.invalidateAgent(agentId);
+    if (agentId !== null) this.routingCache.invalidateAgent(agentId);
     this.routingCache.invalidateTenant(tenantId);
     return target;
   }
