@@ -207,6 +207,38 @@ describe('RouteModelParamsService.get', () => {
   });
 });
 
+describe('RouteModelParamsService Anthropic short ids', () => {
+  const DOTTED = { provider: 'anthropic', authType: 'api_key', model: 'claude-sonnet-4.5' };
+
+  it('reads and writes under the dashed id the proxy looks params up under', async () => {
+    const { service, modelParams, specs } = setup({
+      tiers: [
+        { tier: 'default', override_route: DOTTED, auto_assigned_route: null, fallback_routes: [] },
+      ],
+    });
+    const view = await service.get(AGENT);
+    expect(view.route.model).toBe('claude-sonnet-4.5');
+    expect(specs.getSpecs).toHaveBeenCalledWith('anthropic', 'api_key', 'claude-sonnet-4-5');
+    expect(modelParams.get).toHaveBeenCalledWith(
+      AGENT,
+      'tier:default',
+      'anthropic',
+      'api_key',
+      'claude-sonnet-4-5',
+    );
+
+    modelParams.get.mockResolvedValue({ temperature: 1 });
+    await service.update(AGENT, 'default', 'claude-sonnet-4-5', { unset: ['temperature'] });
+    expect(modelParams.delete).toHaveBeenCalledWith(
+      AGENT,
+      'tier:default',
+      'anthropic',
+      'api_key',
+      'claude-sonnet-4-5',
+    );
+  });
+});
+
 describe('RouteModelParamsService.update', () => {
   it('merges set values into the saved params and persists the sanitized result', async () => {
     const { service, modelParams } = setup({ saved: { temperature: 0.3 } });
@@ -302,6 +334,20 @@ describe('RouteModelParamsService.update', () => {
     await expect(service.update(AGENT, 'default', undefined, { unset: ['top_k'] })).rejects.toThrow(
       /Unknown param "top_k"/,
     );
+  });
+
+  it('rejects a malformed or unsafe param path as a client error', async () => {
+    const { service, modelParams } = setup({ saved: { temperature: 1 } });
+    for (const path of ['__proto__.x', 'a..b', 'constructor']) {
+      await expect(service.update(AGENT, 'default', undefined, { unset: [path] })).rejects.toThrow(
+        BadRequestException,
+      );
+      await expect(
+        service.update(AGENT, 'default', undefined, { set: { [path]: 1 } }),
+      ).rejects.toThrow(/Invalid param path/);
+    }
+    expect(modelParams.set).not.toHaveBeenCalled();
+    expect(modelParams.delete).not.toHaveBeenCalled();
   });
 
   it('rejects an invalid value', async () => {

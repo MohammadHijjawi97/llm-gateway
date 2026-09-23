@@ -565,11 +565,13 @@ describe('MCP tools', () => {
 
       const set = await call(tools, 'manifest_routing_params_set', {
         agent: 'demo',
+        tier: 'deep',
+        model: 'gpt-5',
         set: { 'reasoning.effort': 'high' },
         unset: ['temperature'],
       });
       expect(set.error).toBe(false);
-      expect(deps.routeModelParams.update).toHaveBeenCalledWith('agent-1', undefined, undefined, {
+      expect(deps.routeModelParams.update).toHaveBeenCalledWith('agent-1', 'deep', 'gpt-5', {
         set: { 'reasoning.effort': 'high' },
         unset: ['temperature'],
       });

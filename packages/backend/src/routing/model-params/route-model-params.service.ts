@@ -2,6 +2,7 @@ import { BadRequestException, Injectable, NotFoundException } from '@nestjs/comm
 import {
   deleteProviderParamValue,
   getProviderParamValue,
+  isProviderParamPath,
   modelParamsScopeForHeaderTier,
   modelParamsScopeForTier,
   setProviderParamValue,
@@ -21,6 +22,7 @@ import {
   readFallbackRoutes,
   readOverrideRoute,
 } from '../routing-core/route-helpers';
+import { normalizeProviderModel } from '../../common/utils/anthropic-model-id';
 import { sanitizeModelParams } from './sanitize-model-params';
 
 export const DEFAULT_TIER_NAME = 'default';
@@ -47,6 +49,8 @@ interface ResolvedRoute {
   tierName: string;
   scope: string;
   route: ModelRoute;
+  /** The id the proxy forwards and looks params up under (see normalizeProviderModel). */
+  paramsModel: string;
   models: string[];
 }
 
@@ -68,7 +72,7 @@ export class RouteModelParamsService {
 
   async get(agentId: string, tier = DEFAULT_TIER_NAME, model?: string) {
     const resolved = await this.resolve(agentId, tier, model);
-    const specs = await this.specsFor(resolved.route);
+    const specs = await this.specsFor(resolved);
     return this.view(agentId, resolved, specs);
   }
 
@@ -84,9 +88,13 @@ export class RouteModelParamsService {
       throw new BadRequestException('Nothing to change: pass at least one param to set or unset');
     }
 
+    for (const path of [...unset, ...setEntries.map(([p]) => p)]) {
+      if (!isProviderParamPath(path)) throw new BadRequestException(`Invalid param path "${path}"`);
+    }
+
     const resolved = await this.resolve(agentId, tier ?? DEFAULT_TIER_NAME, model);
-    const { route, scope } = resolved;
-    const specs = await this.specsFor(route);
+    const { route, scope, paramsModel } = resolved;
+    const specs = await this.specsFor(resolved);
     const saved = (await this.savedParams(agentId, resolved)) ?? {};
 
     for (const path of unset) {
@@ -103,7 +111,7 @@ export class RouteModelParamsService {
     for (const [path, value] of setEntries) next = setProviderParamValue(next, path, value);
 
     if (Object.keys(next).length === 0) {
-      await this.modelParams.delete(agentId, scope, route.provider, route.authType, route.model);
+      await this.modelParams.delete(agentId, scope, route.provider, route.authType, paramsModel);
     } else {
       const sanitized = sanitizeModelParams(route.provider, next, specs);
       for (const [path] of setEntries) {
@@ -118,7 +126,7 @@ export class RouteModelParamsService {
         scope,
         route.provider,
         route.authType,
-        route.model,
+        paramsModel,
         sanitized,
       );
     }
@@ -132,10 +140,13 @@ export class RouteModelParamsService {
 
     if (model === undefined) {
       if (!primary) throw new BadRequestException(`Tier "${tierName}" has no model yet`);
-      return { tierName, scope, route: primary, models };
+      return this.resolved(tierName, scope, primary, models);
     }
 
-    const matches = routes.filter((r) => r.model === model);
+    const wanted = (r: ModelRoute) => normalizeProviderModel(r.provider, model);
+    const matches = routes.filter(
+      (r) => r.model === model || normalizeProviderModel(r.provider, r.model) === wanted(r),
+    );
     if (matches.length === 0) {
       throw new BadRequestException(
         `Model "${model}" is not routed by tier "${tierName}". Models: ${models.join(', ')}`,
@@ -147,7 +158,12 @@ export class RouteModelParamsService {
         `Model "${model}" is routed through more than one connection in tier "${tierName}"; set its params from the dashboard`,
       );
     }
-    return { tierName, scope, route: matches[0], models };
+    return this.resolved(tierName, scope, matches[0], models);
+  }
+
+  private resolved(tierName: string, scope: string, route: ModelRoute, models: string[]) {
+    const paramsModel = normalizeProviderModel(route.provider, route.model);
+    return { tierName, scope, route, paramsModel, models };
   }
 
   private async findTier(agentId: string, tier: string) {
@@ -176,12 +192,12 @@ export class RouteModelParamsService {
     };
   }
 
-  private specsFor(route: ModelRoute): Promise<readonly ProviderParamSpec[]> {
-    return this.specs.getSpecs(route.provider, route.authType, route.model);
+  private specsFor({ route, paramsModel }: ResolvedRoute): Promise<readonly ProviderParamSpec[]> {
+    return this.specs.getSpecs(route.provider, route.authType, paramsModel);
   }
 
-  private savedParams(agentId: string, { scope, route }: ResolvedRoute) {
-    return this.modelParams.get(agentId, scope, route.provider, route.authType, route.model);
+  private savedParams(agentId: string, { scope, route, paramsModel }: ResolvedRoute) {
+    return this.modelParams.get(agentId, scope, route.provider, route.authType, paramsModel);
   }
 
   private async view(

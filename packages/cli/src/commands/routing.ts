@@ -521,7 +521,8 @@ function parseParamAssignment(raw: string): [string, unknown] {
  * Model params of one routed model, addressed as tier + model: `--tier` is
  * `default` (the default) or a custom tier's name, `--model` defaults to the
  * tier's primary and may name one of its fallbacks. Saved params override the
- * values the calling app sends.
+ * values the calling app sends, on requests Manifest routes (`model: "auto"`
+ * or a matching custom-tier header); a request naming a model skips them.
  */
 export const routingParams = {
   get: async (io: CliIo, argv: string[]): Promise<void> => {

@@ -74,7 +74,7 @@ import { buildProviderExtraHeaders } from './provider-hooks';
 import { shouldTriggerFallback } from './fallback-status-codes';
 import { peekStream, STREAM_WARMUP_MS } from './stream-warmup';
 import { inferProviderFromModelName } from '../../common/utils/provider-aliases';
-import { normalizeAnthropicShortModelId } from '../../common/utils/anthropic-model-id';
+import { normalizeProviderModel } from '../../common/utils/anthropic-model-id';
 import {
   isTransportError,
   buildTransportErrorResponse,
@@ -1125,6 +1125,4 @@ export class ProxyFallbackService {
   }
 }
 
-export function normalizeProviderModel(provider: string, model: string): string {
-  return provider.toLowerCase() === 'anthropic' ? normalizeAnthropicShortModelId(model) : model;
-}
+export { normalizeProviderModel };

@@ -130,7 +130,7 @@ Models
   mnfst models <agent> [--provider <p>] [--cost] [--capabilities]   (like /v1/models: bare ids; flags opt into metadata)
   mnfst model prices [--provider <p>]                  (install-wide price list — no agent needed)
 
-Routing readouts + custom-tier lifecycle (writes go through mnfst agent configure)
+Routing readouts + custom-tier lifecycle (route writes go through mnfst agent configure; params set writes model params)
   mnfst routing status <agent>
   mnfst routing test <agent> [prompt...] [--tier <t>] [--model <m>] [--as <platform>]
     (one real request through the surface the agent's platform uses — anthropic-family via /v1/messages)

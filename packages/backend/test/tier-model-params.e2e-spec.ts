@@ -94,6 +94,11 @@ describe('PATCH /api/v1/routing/:agent/tiers/:tier/model-params', () => {
 
   it('keeps the default tier separate from the custom tier for the same model', async () => {
     await api()
+      .patch(`${BASE}/tiers/deep/model-params`)
+      .set('x-api-key', TEST_API_KEY)
+      .send({ set: { temperature: 0.4 } })
+      .expect(200);
+    await api()
       .patch(`${BASE}/tiers/default/model-params`)
       .query({ model: 'gpt-4o-mini' })
       .set('x-api-key', TEST_API_KEY)
@@ -109,6 +114,11 @@ describe('PATCH /api/v1/routing/:agent/tiers/:tier/model-params', () => {
   });
 
   it('unsetting the last param deletes the row', async () => {
+    await api()
+      .patch(`${BASE}/tiers/deep/model-params`)
+      .set('x-api-key', TEST_API_KEY)
+      .send({ set: { temperature: 0.4 } })
+      .expect(200);
     await api()
       .patch(`${BASE}/tiers/deep/model-params`)
       .set('x-api-key', TEST_API_KEY)
@@ -133,6 +143,11 @@ describe('PATCH /api/v1/routing/:agent/tiers/:tier/model-params', () => {
       .patch(`${BASE}/tiers/default/model-params`)
       .set('x-api-key', TEST_API_KEY)
       .send({ unset: 'temperature' })
+      .expect(400);
+    await api()
+      .patch(`${BASE}/tiers/default/model-params`)
+      .set('x-api-key', TEST_API_KEY)
+      .send({ unset: ['__proto__.polluted'] })
       .expect(400);
     await api()
       .patch(`${BASE}/tiers/default/model-params`)

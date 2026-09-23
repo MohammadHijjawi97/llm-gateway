@@ -212,7 +212,9 @@ export function registerRoutingTools(
       {
         title: 'Set model params',
         description:
-          'Set or unset params on a routed model. Saved params override the values the caller sends. ' +
+          'Set or unset params on a routed model. Saved params override the values the caller sends ' +
+          'on routed requests (model "auto" or a matching custom-tier header); a request naming a ' +
+          'concrete model skips them. ' +
           'set maps a param path to its value ({"reasoning.effort": "high"}); unset lists paths to ' +
           'remove. Other saved params are kept. Read manifest_routing_params_get first for valid paths.',
         inputSchema: z.object({
