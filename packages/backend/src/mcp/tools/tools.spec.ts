@@ -127,6 +127,10 @@ function makeDeps(): McpToolDeps {
       probeModels: jest.fn().mockResolvedValue([{ model_name: 'm' }]),
     } as never,
     autofix: { resolveEnabled: jest.fn().mockReturnValue(true) } as never,
+    routeModelParams: {
+      get: jest.fn().mockResolvedValue({ tier: 'default', params: [] }),
+      update: jest.fn().mockResolvedValue({ tier: 'default', params: [] }),
+    } as never,
     modelDiscovery: {
       getModelsForAgent: jest
         .fn()
@@ -546,6 +550,35 @@ describe('MCP tools', () => {
       expect(
         (await call(tools, 'manifest_routing_fallbacks_clear', { agent: 'demo' })).error,
       ).toBeFalsy();
+    });
+
+    it('reads and writes model params by tier and model', async () => {
+      const deps = makeDeps();
+      const tools = registerAll(deps);
+      const got = await call(tools, 'manifest_routing_params_get', {
+        agent: 'demo',
+        tier: 'deep',
+        model: 'gpt-5',
+      });
+      expect(got.data).toEqual({ tier: 'default', params: [] });
+      expect(deps.routeModelParams.get).toHaveBeenCalledWith('agent-1', 'deep', 'gpt-5');
+
+      const set = await call(tools, 'manifest_routing_params_set', {
+        agent: 'demo',
+        set: { 'reasoning.effort': 'high' },
+        unset: ['temperature'],
+      });
+      expect(set.error).toBe(false);
+      expect(deps.routeModelParams.update).toHaveBeenCalledWith('agent-1', undefined, undefined, {
+        set: { 'reasoning.effort': 'high' },
+        unset: ['temperature'],
+      });
+    });
+
+    it('hides the params write tool from a read-only token', () => {
+      const tools = registerAll(makeDeps(), { ...OPERATOR, scopes: new Set(['mcp:read']) });
+      expect(tools.has('manifest_routing_params_get')).toBe(true);
+      expect(tools.has('manifest_routing_params_set')).toBe(false);
     });
 
     it('reads and writes Autofix and recording', async () => {

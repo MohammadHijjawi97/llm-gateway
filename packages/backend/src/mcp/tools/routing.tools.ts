@@ -1,6 +1,6 @@
 import { McpServer } from '@modelcontextprotocol/server';
 import { z } from 'zod';
-import { PLATFORM_API_SURFACES } from 'manifest-shared';
+import { PLATFORM_API_SURFACES, type JsonValue } from 'manifest-shared';
 import { authOrigin } from '../../auth/auth.instance';
 import { McpOperator, MCP_WRITE_SCOPE } from '../mcp-auth';
 import { McpToolDeps } from '../tool-deps';
@@ -177,6 +177,60 @@ export function registerRoutingTools(
             const agent = await deps.resolveAgent.resolve(operator.tenantId, agentName);
             await deps.tiers.clearFallbacks(agent.id, tier ?? 'default');
             return { ok: true };
+          })(),
+        ),
+    );
+
+  server.registerTool(
+    'manifest_routing_params_get',
+    {
+      title: 'Get model params',
+      description:
+        'List the params a routed model accepts (type, allowed values, description) with their saved ' +
+        'values, e.g. reasoning.effort or temperature. tier is "default" or a custom tier name; model ' +
+        'defaults to the tier primary and may name one of its fallbacks. current: null means the ' +
+        'provider default applies.',
+      inputSchema: z.object({
+        agent: z.string().min(1),
+        tier: z.string().min(1).optional(),
+        model: z.string().min(1).optional(),
+      }),
+      annotations: { readOnlyHint: true },
+    },
+    async ({ agent: agentName, tier, model }) =>
+      result(
+        (async () => {
+          const agent = await deps.resolveAgent.resolve(operator.tenantId, agentName);
+          return deps.routeModelParams.get(agent.id, tier, model);
+        })(),
+      ),
+  );
+
+  if (canWrite)
+    server.registerTool(
+      'manifest_routing_params_set',
+      {
+        title: 'Set model params',
+        description:
+          'Set or unset params on a routed model. Saved params override the values the caller sends. ' +
+          'set maps a param path to its value ({"reasoning.effort": "high"}); unset lists paths to ' +
+          'remove. Other saved params are kept. Read manifest_routing_params_get first for valid paths.',
+        inputSchema: z.object({
+          agent: z.string().min(1),
+          tier: z.string().min(1).optional(),
+          model: z.string().min(1).optional(),
+          set: z.record(z.string().min(1), z.unknown()).optional(),
+          unset: z.array(z.string().min(1)).max(50).optional(),
+        }),
+      },
+      async ({ agent: agentName, tier, model, set, unset }) =>
+        result(
+          (async () => {
+            const agent = await deps.resolveAgent.resolve(operator.tenantId, agentName);
+            return deps.routeModelParams.update(agent.id, tier, model, {
+              set: set as Record<string, JsonValue> | undefined,
+              unset,
+            });
           })(),
         ),
     );

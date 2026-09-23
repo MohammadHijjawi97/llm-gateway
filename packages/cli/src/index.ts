@@ -67,6 +67,8 @@ export const COMMANDS: Record<string, Handler> = {
   'routing autofix set': routing.routingAutofix.set,
   'routing recording get': routing.routingRecording.get,
   'routing recording set': routing.routingRecording.set,
+  'routing params get': routing.routingParams.get,
+  'routing params set': routing.routingParams.set,
 
   'requests get': requests.requestsGet,
 
@@ -138,6 +140,8 @@ Routing readouts + custom-tier lifecycle (writes go through mnfst agent configur
   mnfst routing custom delete <agent> <name> --yes
   mnfst routing autofix get <agent> | mnfst routing autofix set <agent> --enabled true|false
   mnfst routing recording get <agent> | mnfst routing recording set <agent> --enabled true|false
+  mnfst routing params get <agent> [--tier <t>] [--model <m>]
+  mnfst routing params set <agent> [--tier <t>] [--model <m>] [--set <path>=<value> ...] [--unset <path> ...]
 
 Requests (paginated, mirrors the API: opaque cursor, one page per call)
   mnfst requests get [--agent <name>] [--range <r>] [--status <s>] [--provider <p>] [--origin <o>] [--limit <1-200>] [--cursor <c>] [--full]

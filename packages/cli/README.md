@@ -49,6 +49,7 @@ The CLI uses that gateway for later commands. You can select another gateway wit
 | List available agent platforms | `mnfst agent platforms`                        |
 | List connectable providers     | `mnfst provider catalog`                       |
 | Review an agent's routing      | `mnfst routing status my-app`                  |
+| Read or set model params       | `mnfst routing params get my-app`              |
 | Read recent requests           | `mnfst requests get --agent my-app --range 7d` |
 | See all commands and options   | `mnfst --help`                                 |
 

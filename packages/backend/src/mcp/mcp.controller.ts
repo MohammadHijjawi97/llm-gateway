@@ -38,6 +38,7 @@ import { Agent } from '../entities/agent.entity';
 import { resolveMcpOperator } from './mcp-auth';
 import { buildMcpServer } from './mcp-server.factory';
 import { McpToolDeps } from './tool-deps';
+import { RouteModelParamsService } from '../routing/model-params/route-model-params.service';
 
 /**
  * The remote MCP endpoint.
@@ -76,6 +77,7 @@ export class McpController {
     private readonly headerTiers: HeaderTierService,
     private readonly customProviders: CustomProviderService,
     private readonly autofix: AutofixService,
+    private readonly routeModelParams: RouteModelParamsService,
     private readonly modelDiscovery: ModelDiscoveryService,
     private readonly pricingSync: PricingSyncService,
     private readonly modelPrices: ModelPricesService,
@@ -107,6 +109,7 @@ export class McpController {
       headerTiers: this.headerTiers,
       customProviders: this.customProviders,
       autofix: this.autofix,
+      routeModelParams: this.routeModelParams,
       modelDiscovery: this.modelDiscovery,
       pricingSync: this.pricingSync,
       modelPrices: this.modelPrices,
