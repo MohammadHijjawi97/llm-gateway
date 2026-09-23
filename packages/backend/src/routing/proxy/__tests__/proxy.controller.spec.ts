@@ -3199,6 +3199,90 @@ describe('ProxyController', () => {
       expect(cancelledSpy).toHaveBeenCalled();
     });
 
+    it('cancels earlier pending attempts when the caller closes mid fallback chain', async () => {
+      let closeListener: (() => void) | undefined;
+      const cancelledSpy = jest.spyOn(recorder, 'recordCancelledRequest');
+      const attemptIds: string[] = [];
+      proxyService.proxyRequest.mockImplementation(
+        async (options: { startProviderAttempt: StartProviderAttempt }) => {
+          const primary = options.startProviderAttempt({ provider: 'openai', model: 'gpt-4o' });
+          const cooldown = options.startProviderAttempt({
+            provider: 'anthropic',
+            model: 'claude-opus-5',
+            providerCallStarted: false,
+          });
+          const fallback = options.startProviderAttempt({
+            provider: 'deepseek',
+            model: 'deepseek-v4-flash',
+          });
+          attemptIds.push(primary.id, cooldown.id, fallback.id);
+          // The primary failed, the chain moved on, then the caller hung up and
+          // the fallback call rejected with the aborted signal.
+          closeListener?.();
+          throw new DOMException('This operation was aborted', 'AbortError');
+        },
+      );
+      const { res } = mockResponse();
+      (res.once as jest.Mock).mockImplementation((event: string, cb: () => void) => {
+        if (event === 'close') closeListener = cb;
+      });
+
+      await controller.chatCompletions(
+        mockRequest({ messages: [{ role: 'user', content: 'hi' }] }) as never,
+        res as never,
+      );
+      await flushRecorderMicrotasks();
+
+      const [primaryId, cooldownId, fallbackId] = attemptIds;
+      expect(cancelledSpy).toHaveBeenCalledTimes(1);
+      // The last attempt is completed by recordCancelledRequest itself.
+      expect(mockMessageRepo.update).toHaveBeenCalledWith(
+        { id: fallbackId },
+        expect.objectContaining({ status: 'cancelled' }),
+      );
+      // The primary row must not stay pending, and only a still-pending row
+      // is touched so a terminal write that already landed wins.
+      expect(mockMessageRepo.update).toHaveBeenCalledWith(
+        { id: primaryId, status: 'pending' },
+        expect.objectContaining({ status: 'cancelled', error_message: null }),
+      );
+      // A cooldown skip never inserted a row, so there is nothing to cancel.
+      const touched = mockMessageRepo.update.mock.calls.map(
+        ([criteria]) => (criteria as { id: string }).id,
+      );
+      expect(touched).not.toContain(cooldownId);
+      expect(touched.filter((id) => id === fallbackId)).toHaveLength(1);
+    });
+
+    it('still ends the request when cancelling leftover attempts fails', async () => {
+      let closeListener: (() => void) | undefined;
+      const warnSpy = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+      jest.spyOn(recorder, 'cancelPendingProviderAttempts').mockRejectedValue(new Error('db down'));
+      proxyService.proxyRequest.mockImplementation(
+        async (options: { startProviderAttempt: StartProviderAttempt }) => {
+          options.startProviderAttempt({ provider: 'openai', model: 'gpt-4o' });
+          options.startProviderAttempt({ provider: 'deepseek', model: 'deepseek-v4-flash' });
+          closeListener?.();
+          throw new DOMException('This operation was aborted', 'AbortError');
+        },
+      );
+      const { res } = mockResponse();
+      (res.once as jest.Mock).mockImplementation((event: string, cb: () => void) => {
+        if (event === 'close') closeListener = cb;
+      });
+
+      await controller.chatCompletions(
+        mockRequest({ messages: [{ role: 'user', content: 'hi' }] }) as never,
+        res as never,
+      );
+
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringContaining('Failed to cancel pending Provider Attempts'),
+      );
+      expect(rateLimiter.releaseSlot).toHaveBeenCalled();
+      warnSpy.mockRestore();
+    });
+
     it('should emit a terminal SSE error when the upstream dies after the first chunk', async () => {
       proxyService.proxyRequest.mockResolvedValue({
         forward: {

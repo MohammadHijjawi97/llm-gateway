@@ -290,6 +290,9 @@ export class ProxyController {
     }
 
     let attemptSequence = 0;
+    // Every attempt that inserted a pending row, so a caller disconnect can
+    // finish the ones no terminal writer will reach.
+    const startedAttempts: ProviderAttemptRef[] = [];
     const startProviderAttempt: StartProviderAttempt = (start) => {
       const startedAtMs = Date.now();
       const attempt: ProviderAttemptRef = {
@@ -334,6 +337,7 @@ export class ProxyController {
           this.logger.warn(`Failed to record pending Provider Attempt: ${e}`);
           return false;
         });
+      startedAttempts.push(attempt);
       attempt.completeFailure = ({ status, errorBody, superseded }) =>
         this.recorder
           .completePendingProviderFailure(attempt, status, errorBody, superseded)
@@ -583,7 +587,16 @@ export class ProxyController {
         currentAttempt,
         currentAttemptStart,
       );
-      await (currentMeta?.attempt ?? currentAttempt)?.finishRecording?.();
+      const lastAttempt = currentMeta?.attempt ?? currentAttempt;
+      await lastAttempt?.finishRecording?.();
+      if (clientAbort.signal.aborted) {
+        // recordCancelledRequest completed the last attempt. Earlier ones (a
+        // failed primary, failed fallback hops, an Autofix retry) were carried
+        // in the chain's local state, which the abort threw away.
+        await this.recorder
+          .cancelPendingProviderAttempts(startedAttempts.filter((a) => a !== lastAttempt))
+          .catch((e) => this.logger.warn(`Failed to cancel pending Provider Attempts: ${e}`));
+      }
     } finally {
       if (slotAcquired) this.rateLimiter.releaseSlot(tenantId);
     }
