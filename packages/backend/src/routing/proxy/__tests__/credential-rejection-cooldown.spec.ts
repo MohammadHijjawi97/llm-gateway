@@ -77,30 +77,39 @@ describe('CredentialRejectionCooldown', () => {
     expect(cooldown.rejectedUntil(ref())).toBe(now + 60_000);
   });
 
+  it('remembers only the latest refused secret for a connection', () => {
+    const cooldown = new CredentialRejectionCooldown(60_000, 10, clock);
+    cooldown.reject(ref());
+    cooldown.reject(ref({ secret: 'access-token-2' }));
+
+    expect(cooldown.rejectedUntil(ref({ secret: 'access-token-2' }))).not.toBeNull();
+    expect(cooldown.rejectedUntil(ref())).toBeNull();
+  });
+
   it('evicts expired entries before dropping live ones when full', () => {
     const cooldown = new CredentialRejectionCooldown(60_000, 2, clock);
-    cooldown.reject(ref({ secret: 'a' }));
+    cooldown.reject(ref({ keyLabel: 'a' }));
     now += 60_000;
-    cooldown.reject(ref({ secret: 'b' }));
-    cooldown.reject(ref({ secret: 'c' }));
+    cooldown.reject(ref({ keyLabel: 'b' }));
+    cooldown.reject(ref({ keyLabel: 'c' }));
 
-    expect(cooldown.rejectedUntil(ref({ secret: 'b' }))).not.toBeNull();
-    expect(cooldown.rejectedUntil(ref({ secret: 'c' }))).not.toBeNull();
+    expect(cooldown.rejectedUntil(ref({ keyLabel: 'b' }))).not.toBeNull();
+    expect(cooldown.rejectedUntil(ref({ keyLabel: 'c' }))).not.toBeNull();
   });
 
   it('drops the entry that expires first when every entry is still live', () => {
     const cooldown = new CredentialRejectionCooldown(60_000, 2, clock);
-    cooldown.reject(ref({ secret: 'a' }));
+    cooldown.reject(ref({ keyLabel: 'a' }));
     now += 1;
-    cooldown.reject(ref({ secret: 'b' }));
+    cooldown.reject(ref({ keyLabel: 'b' }));
     now += 1;
     // Re-rejecting "a" moves it behind "b", so "b" now expires first.
-    cooldown.reject(ref({ secret: 'a' }));
-    cooldown.reject(ref({ secret: 'c' }));
+    cooldown.reject(ref({ keyLabel: 'a' }));
+    cooldown.reject(ref({ keyLabel: 'c' }));
 
-    expect(cooldown.rejectedUntil(ref({ secret: 'b' }))).toBeNull();
-    expect(cooldown.rejectedUntil(ref({ secret: 'a' }))).not.toBeNull();
-    expect(cooldown.rejectedUntil(ref({ secret: 'c' }))).not.toBeNull();
+    expect(cooldown.rejectedUntil(ref({ keyLabel: 'b' }))).toBeNull();
+    expect(cooldown.rejectedUntil(ref({ keyLabel: 'a' }))).not.toBeNull();
+    expect(cooldown.rejectedUntil(ref({ keyLabel: 'c' }))).not.toBeNull();
   });
 
   it('defaults to a five-minute cooldown on the real clock', () => {

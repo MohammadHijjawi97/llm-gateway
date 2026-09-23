@@ -1,11 +1,6 @@
-import { createHmac, randomBytes } from 'crypto';
-
 /** How long a credential the provider rejected with a 401 is skipped. */
 export const CREDENTIAL_REJECTION_COOLDOWN_MS = 5 * 60_000;
 const MAX_ENTRIES = 2_000;
-// Keyed per process so a fingerprint is useless outside this map: it cannot be
-// matched against a guessed secret or linked across replicas.
-const FINGERPRINT_KEY = randomBytes(32);
 
 /** The credential a provider call used, as routing knows it. */
 export interface RejectedCredentialRef {
@@ -17,19 +12,27 @@ export interface RejectedCredentialRef {
   secret: string;
 }
 
+interface Rejection {
+  until: number;
+  /** The exact secret the provider refused. Any other secret is tried again. */
+  secret: string;
+}
+
 /**
  * Remembers credentials a provider rejected with a 401, so routing skips them
  * for a while instead of paying an upstream round-trip (and, for OAuth, a
  * refresh attempt) on every request before falling back.
  *
- * Entries are keyed by a fingerprint of the rejected secret. Reconnecting an
- * OAuth subscription or replacing an API key changes the secret, so the new
- * credential is tried at once without any invalidation hook. The state is
- * in-memory per replica: a restart or another replica costs at most one more
- * rejected call before it learns the same thing.
+ * One entry per connection (tenant, provider, auth type, label) holds the
+ * secret that was refused. Reconnecting an OAuth subscription or replacing an
+ * API key changes the secret, so the new credential is tried at once without
+ * any invalidation hook. The secret is compared, never hashed or persisted:
+ * the process already holds it for every request. The state is in-memory per
+ * replica: a restart or another replica costs at most one more rejected call
+ * before it learns the same thing.
  */
 export class CredentialRejectionCooldown {
-  private readonly rejectedUntilByKey = new Map<string, number>();
+  private readonly rejections = new Map<string, Rejection>();
 
   constructor(
     private readonly ttlMs = CREDENTIAL_REJECTION_COOLDOWN_MS,
@@ -38,51 +41,43 @@ export class CredentialRejectionCooldown {
   ) {}
 
   reject(ref: RejectedCredentialRef): void {
-    const key = cooldownKey(ref);
-    if (!key) return;
+    const key = connectionKey(ref);
+    if (!key || !ref.secret) return;
     // Re-insert so insertion order stays expiry order (see evict).
-    this.rejectedUntilByKey.delete(key);
-    if (this.rejectedUntilByKey.size >= this.maxEntries) this.evict();
-    this.rejectedUntilByKey.set(key, this.now() + this.ttlMs);
+    this.rejections.delete(key);
+    if (this.rejections.size >= this.maxEntries) this.evict();
+    this.rejections.set(key, { until: this.now() + this.ttlMs, secret: ref.secret });
   }
 
   /** Epoch ms until which the credential is skipped, or null when it is usable. */
   rejectedUntil(ref: RejectedCredentialRef): number | null {
-    const key = cooldownKey(ref);
+    const key = connectionKey(ref);
     if (!key) return null;
-    const until = this.rejectedUntilByKey.get(key);
-    if (until === undefined) return null;
-    if (until <= this.now()) {
-      this.rejectedUntilByKey.delete(key);
+    const rejection = this.rejections.get(key);
+    if (!rejection) return null;
+    if (rejection.until <= this.now()) {
+      this.rejections.delete(key);
       return null;
     }
-    return until;
+    return rejection.secret === ref.secret ? rejection.until : null;
   }
 
   /** Drop expired entries, then the oldest one if the map is still full. */
   private evict(): void {
     const now = this.now();
-    for (const [key, until] of this.rejectedUntilByKey) {
-      if (until <= now) this.rejectedUntilByKey.delete(key);
+    for (const [key, rejection] of this.rejections) {
+      if (rejection.until <= now) this.rejections.delete(key);
     }
-    if (this.rejectedUntilByKey.size < this.maxEntries) return;
+    if (this.rejections.size < this.maxEntries) return;
     // Every entry shares one TTL, so insertion order is expiry order.
-    const oldest = this.rejectedUntilByKey.keys().next().value as string;
-    this.rejectedUntilByKey.delete(oldest);
+    const oldest = this.rejections.keys().next().value as string;
+    this.rejections.delete(oldest);
   }
 }
 
-function cooldownKey(ref: RejectedCredentialRef): string | null {
-  if (!ref.tenantId || !ref.secret) return null;
-  const fingerprint = createHmac('sha256', FINGERPRINT_KEY)
-    .update(ref.secret)
-    .digest('hex')
-    .slice(0, 32);
-  return [
-    ref.tenantId,
-    ref.provider.toLowerCase(),
-    ref.authType ?? '',
-    ref.keyLabel ?? '',
-    fingerprint,
-  ].join('\u0000');
+function connectionKey(ref: RejectedCredentialRef): string | null {
+  if (!ref.tenantId) return null;
+  return [ref.tenantId, ref.provider.toLowerCase(), ref.authType ?? '', ref.keyLabel ?? ''].join(
+    '\u0000',
+  );
 }
