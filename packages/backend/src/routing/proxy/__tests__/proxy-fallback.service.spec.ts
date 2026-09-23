@@ -20,6 +20,13 @@ import { ProviderParamSpecService } from '../../routing-core/provider-param-spec
 import { AutofixService } from '../../autofix/autofix.service';
 import { getProviderParamSpecs, type ProviderParamSpecCatalog } from 'manifest-shared';
 
+// A short warm-up window keeps the stalled-stream fallback tests fast. Only
+// the fallback chain reads it here; peekStream itself is the real one.
+jest.mock('../stream-warmup', () => ({
+  ...jest.requireActual('../stream-warmup'),
+  STREAM_WARMUP_MS: 50,
+}));
+
 const specCatalog: ProviderParamSpecCatalog = [
   {
     provider: 'deepseek',
@@ -2483,6 +2490,123 @@ describe('ProxyFallbackService', () => {
         'anthropic',
         'agent-1',
       );
+    });
+
+    describe('stream warm-up on fallback hops', () => {
+      const encoder = new TextEncoder();
+      /** 200 headers, then no byte ever arrives. */
+      const stalledStream = (): ReadableStream<Uint8Array> => new ReadableStream({ start() {} });
+      const dataStream = (text: string): ReadableStream<Uint8Array> =>
+        new ReadableStream({
+          start(controller) {
+            controller.enqueue(encoder.encode(text));
+            controller.close();
+          },
+        });
+      const streamForward = (stream: ReadableStream<Uint8Array>, extra = {}) => ({
+        response: new Response(stream, {
+          status: 200,
+          headers: { 'content-type': 'text/event-stream' },
+        }),
+        providerCallStarted: true,
+        isGoogle: false,
+        isAnthropic: false,
+        isChatGpt: false,
+        ...extra,
+      });
+      const routes = [
+        { provider: 'anthropic', authType: 'api_key' as const, model: 'claude-sonnet-4' },
+        { provider: 'openai', authType: 'api_key' as const, model: 'gpt-4.1' },
+      ];
+      const runStream = (models: string[]) =>
+        service.tryFallbacks(
+          'agent-1',
+          'tenant-1',
+          models,
+          { ...body, stream: true },
+          true,
+          'sess-1',
+          'gpt-4o',
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          'chat_completions',
+          undefined,
+          routes.slice(0, models.length),
+        );
+
+      beforeEach(() => {
+        providerKeyService.getProviderApiKey.mockResolvedValue('sk-test');
+      });
+
+      it('falls through to the next hop when a fallback stream never sends a byte', async () => {
+        providerClient.forward
+          .mockResolvedValueOnce(streamForward(stalledStream()) as never)
+          .mockResolvedValueOnce(streamForward(dataStream('data: hello\n\n')) as never);
+
+        const result = await runStream(['claude-sonnet-4', 'gpt-4.1']);
+
+        expect(result.success).not.toBeNull();
+        expect(result.success!.provider).toBe('openai');
+        expect(result.success!.fallbackIndex).toBe(1);
+        expect(await result.success!.forward.response.text()).toBe('data: hello\n\n');
+        expect(result.failures).toHaveLength(1);
+        expect(result.failures[0]).toMatchObject({ provider: 'anthropic', status: 502 });
+        expect(result.failures[0].errorBody).toContain('Stream warmup failed');
+      });
+
+      it('records a failure when the last fallback stream stalls', async () => {
+        providerClient.forward.mockResolvedValueOnce(streamForward(stalledStream()) as never);
+
+        const result = await runStream(['claude-sonnet-4']);
+
+        expect(result.success).toBeNull();
+        expect(result.failures).toHaveLength(1);
+        expect(result.failures[0]).toMatchObject({ provider: 'anthropic', status: 502 });
+      });
+
+      it('keeps a healthy fallback stream intact', async () => {
+        const forward = streamForward(dataStream('data: one\n\ndata: two\n\n'), {
+          wireRequestBody: { model: 'claude-sonnet-4' },
+        });
+        providerClient.forward.mockResolvedValueOnce(forward as never);
+
+        const result = await runStream(['claude-sonnet-4']);
+
+        expect(result.success).not.toBeNull();
+        const served = result.success!.forward;
+        expect(served.response.status).toBe(200);
+        expect(served.response.headers.get('content-type')).toBe('text/event-stream');
+        expect(served.wireRequestBody).toEqual({ model: 'claude-sonnet-4' });
+        expect(await served.response.text()).toBe('data: one\n\ndata: two\n\n');
+        expect(result.failures).toHaveLength(0);
+      });
+
+      it('warms up a healed retry before Autofix judges it', async () => {
+        const retryWireBody = jest.fn().mockResolvedValue(streamForward(stalledStream()));
+        providerClient.forward.mockResolvedValueOnce({
+          response: new Response('{"error":{"message":"bad param"}}', { status: 400 }),
+          wireRequestBody: { model: 'claude-sonnet-4', messages: [] },
+          wireApiMode: 'chat_completions',
+          retryWireBody,
+          providerCallStarted: true,
+          isGoogle: false,
+          isAnthropic: false,
+          isChatGpt: false,
+        } as never);
+        autofixService.isRepairable.mockReturnValue(true);
+        autofixService.maybeHeal.mockResolvedValue(null);
+
+        await runStream(['claude-sonnet-4']);
+
+        const healArgs = autofixService.maybeHeal.mock.calls[0][0];
+        const retried = await healArgs.reforward({ model: 'claude-sonnet-4', messages: [] });
+        // A retry whose stream stalls is a failed patch, not a healed request.
+        expect(retried.response.ok).toBe(false);
+        expect(retried.response.status).toBe(502);
+      });
     });
 
     describe('Autofix on fallback hops', () => {

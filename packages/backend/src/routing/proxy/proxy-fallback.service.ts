@@ -72,6 +72,7 @@ import { CopilotTokenService } from './copilot-token.service';
 import { ReasoningContentCache } from './reasoning-content-cache';
 import { buildProviderExtraHeaders } from './provider-hooks';
 import { shouldTriggerFallback } from './fallback-status-codes';
+import { peekStream, STREAM_WARMUP_MS } from './stream-warmup';
 import { inferProviderFromModelName } from '../../common/utils/provider-aliases';
 import { normalizeAnthropicShortModelId } from '../../common/utils/anthropic-model-id';
 import {
@@ -332,32 +333,38 @@ export class ProxyFallbackService {
         `Fallback ${i}: trying model=${model} provider=${provider} auth_type=${authType} (primary=${primaryModel})`,
       );
 
-      const forward = await this.tryForwardToProvider({
-        provider,
-        apiKey: credentials.apiKey,
-        model,
-        body,
-        resolveChatBody,
-        stream,
-        sessionKey,
-        reasoningCacheKey,
-        providerCacheKey,
-        signal,
-        agentId,
-        tenantId,
-        rawApiKey: credentials.rawApiKey,
-        providerKeyLabel,
-        authType,
-        apiMode,
-        resourceUrl: credentials.resourceUrl,
-        providerRegion: credentials.providerRegion,
-        signatureLookup,
-        thinkingLookup,
-        clientAnthropicBeta,
-        paramMergeContext,
-        tenantProviderId,
-        startProviderAttempt,
-      });
+      // A hop's stream is warmed up exactly like the primary's: a 200 that
+      // never sends a byte becomes a failed hop, so the next route still gets
+      // its turn instead of the client receiving a dead stream.
+      const forward = await this.warmUpStreamBody(
+        await this.tryForwardToProvider({
+          provider,
+          apiKey: credentials.apiKey,
+          model,
+          body,
+          resolveChatBody,
+          stream,
+          sessionKey,
+          reasoningCacheKey,
+          providerCacheKey,
+          signal,
+          agentId,
+          tenantId,
+          rawApiKey: credentials.rawApiKey,
+          providerKeyLabel,
+          authType,
+          apiMode,
+          resourceUrl: credentials.resourceUrl,
+          providerRegion: credentials.providerRegion,
+          signatureLookup,
+          thinkingLookup,
+          clientAnthropicBeta,
+          paramMergeContext,
+          tenantProviderId,
+          startProviderAttempt,
+        }),
+        { stream, provider, model },
+      );
 
       // Autofix runs on a failed fallback hop too, not just the primary: a
       // fallback that rejects a request-side param (e.g. an unsupported
@@ -510,19 +517,60 @@ export class ProxyFallbackService {
       authType: input.authType,
       apiMode: input.apiMode,
       requestBody: input.requestBody,
-      reforward: (healedBody) =>
-        this.retryWireBody(input.forward, healedBody, {
-          provider: input.provider,
-          model: input.model,
-          authType: input.authType,
-          agentId: input.agentId,
-          tenantProviderId: input.tenantProviderId,
-          providerKeyLabel: input.providerKeyLabel,
-          startProviderAttempt: input.startProviderAttempt,
-          signal: input.signal,
-          stream: input.stream,
-        }),
+      // Warm up the patched retry before Autofix sees it, so a retry whose
+      // stream stalls counts as a failed patch rather than a healed request.
+      reforward: async (healedBody) =>
+        this.warmUpStreamBody(
+          await this.retryWireBody(input.forward, healedBody, {
+            provider: input.provider,
+            model: input.model,
+            authType: input.authType,
+            agentId: input.agentId,
+            tenantProviderId: input.tenantProviderId,
+            providerKeyLabel: input.providerKeyLabel,
+            startProviderAttempt: input.startProviderAttempt,
+            signal: input.signal,
+            stream: input.stream,
+          }),
+          input,
+        ),
     });
+  }
+
+  /**
+   * Streaming counterpart of {@link bufferNonStreamBody} for fallback hops.
+   * Peek at the first chunk before the hop is committed; on a stall, error or
+   * empty stream, return a synthetic 502 so the chain treats it as a failed
+   * hop. The primary gets the same warm-up in ProxyService.proxyRequest.
+   */
+  private async warmUpStreamBody(
+    forward: ForwardResult,
+    opts: { stream: boolean; provider: string; model: string },
+  ): Promise<ForwardResult> {
+    const { response, attempt } = forward;
+    if (!opts.stream || !response.ok || !response.body) return forward;
+    const warmup = await peekStream(response.body, STREAM_WARMUP_MS);
+    if (warmup.ok) {
+      return {
+        ...forward,
+        response: new Response(warmup.stream, {
+          status: response.status,
+          statusText: response.statusText,
+          headers: response.headers,
+        }),
+      };
+    }
+    if (attempt) attempt.completedAtMs = Date.now();
+    this.logger.warn(
+      `Fallback stream warmup failed: provider=${opts.provider} model=${opts.model} reason=${warmup.reason} message=${warmup.message}`,
+    );
+    return {
+      ...forward,
+      response: new Response(
+        JSON.stringify({ error: { message: `Stream warmup failed: ${warmup.message}` } }),
+        { status: 502, headers: { 'content-type': 'application/json' } },
+      ),
+    };
   }
 
   private routeCredentialDeps(): RouteCredentialDeps {
