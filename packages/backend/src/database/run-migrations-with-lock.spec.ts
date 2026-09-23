@@ -155,6 +155,11 @@ describe('runMigrationsWithAdvisoryLock', () => {
 
     await runMigrationsWithAdvisoryLock(m.dataSource, 0);
 
+    // The empty answer must lead to a second attempt, not to running migrations.
+    expect(m.query.mock.calls.filter(([sql]) => sql === TRY_LOCK)).toHaveLength(2);
     expect(m.runMigrations).toHaveBeenCalledTimes(1);
+    expect(m.runMigrations.mock.invocationCallOrder[0]).toBeGreaterThan(
+      m.query.mock.invocationCallOrder[1],
+    );
   });
 });
