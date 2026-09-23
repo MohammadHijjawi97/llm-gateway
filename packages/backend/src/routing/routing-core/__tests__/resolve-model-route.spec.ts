@@ -1,8 +1,11 @@
 import type { AuthType } from 'manifest-shared';
 import type { DiscoveredModel } from '../../../model-discovery/model-fetcher';
+import type { ModelRoute } from 'manifest-shared';
 import {
+  describeUnresolvedFallback,
   describeUnresolvedModel,
   matchesModelName,
+  resolveFallbackRoutes,
   resolveModelRoute,
 } from '../resolve-model-route';
 
@@ -55,8 +58,10 @@ describe('matchesModelName', () => {
     expect(matchesModelName(target, name)).toBe(true);
   });
 
-  it('does not treat a native bare name as another provider-qualified id', () => {
-    expect(matchesModelName(available[0], 'deepseek-v4-pro')).toBe(false);
+  it('matches a bare name to a custom model only, never to a native model id suffix', () => {
+    const native = model('deepseek/deepseek-v4-pro', 'openrouter');
+    expect(matchesModelName(native, 'deepseek-v4-pro')).toBe(false);
+    expect(matchesModelName(available[3], 'deepseek-v4-pro')).toBe(true);
   });
 });
 
@@ -127,6 +132,13 @@ describe('resolveModelRoute', () => {
     );
   });
 
+  it('refuses an auth type discovery does not offer for the model', () => {
+    // A subscription-only model must never be stored as a metered api_key route.
+    expect(
+      resolveModelRoute('openai/gpt-5.4-subscription', available, { authType: 'api_key' }),
+    ).toEqual({ ok: false, reason: 'wrong_auth_type' });
+  });
+
   it('ignores discovered models without an auth type', () => {
     expect(
       resolveModelRoute('orphan', [model('orphan', 'groq', 'api_key', { authType: undefined })]),
@@ -139,7 +151,9 @@ describe('resolveModelRoute', () => {
 
 describe('describeUnresolvedModel', () => {
   it('suggests the named provider’s own models under their public ids', () => {
-    const message = describeUnresolvedModel('nope', 'not_found', available, 'openrouter');
+    const message = describeUnresolvedModel('nope', 'not_found', available, {
+      provider: 'openrouter',
+    });
     expect(message).toBe(
       'Model "nope" is not in this agent\'s discovered model list (provider: openrouter). ' +
         'Connect the appropriate provider first, or choose from: ' +
@@ -148,7 +162,7 @@ describe('describeUnresolvedModel', () => {
   });
 
   it('says when the agent has no models from the named provider', () => {
-    expect(describeUnresolvedModel('x', 'not_found', available, 'xai')).toBe(
+    expect(describeUnresolvedModel('x', 'not_found', available, { provider: 'xai' })).toBe(
       'Model "x" is not in this agent\'s discovered model list (provider: xai). ' +
         'This agent has no models from "xai": connect it or enable it for this agent first.',
     );
@@ -162,12 +176,82 @@ describe('describeUnresolvedModel', () => {
     expect(message).not.toContain('groq/m-20');
   });
 
+  it('explains an auth type the model is not offered with', () => {
+    expect(
+      describeUnresolvedModel('m', 'wrong_auth_type', available, {
+        provider: 'openai',
+        authType: 'api_key',
+      }),
+    ).toBe(
+      'Model "m" is not offered with auth type "api_key" by provider "openai" for this agent.',
+    );
+    expect(
+      describeUnresolvedModel('m', 'wrong_auth_type', available, { authType: 'api_key' }),
+    ).toBe('Model "m" is not offered with auth type "api_key" for this agent.');
+  });
+
   it('explains a wrong provider and an ambiguous name', () => {
-    expect(describeUnresolvedModel('m', 'wrong_provider', available, 'groq')).toBe(
+    expect(describeUnresolvedModel('m', 'wrong_provider', available, { provider: 'groq' })).toBe(
       'Model "m" is not offered by provider "groq" for this agent.',
     );
     expect(describeUnresolvedModel('m', 'ambiguous', available)).toBe(
       'Model "m" is offered by multiple providers — pass an explicit provider + authType so the route is unambiguous.',
+    );
+  });
+});
+
+describe('resolveFallbackRoutes', () => {
+  const route = (
+    provider: string,
+    authType: ModelRoute['authType'],
+    m: string,
+    keyLabel?: string,
+  ) => (keyLabel ? { provider, authType, model: m, keyLabel } : { provider, authType, model: m });
+
+  it('keeps the key pin of a caller route given by its public id', () => {
+    const given = route(
+      'openrouter',
+      'api_key',
+      'openrouter/deepseek/deepseek-chat-v3.1:free',
+      'Work',
+    );
+    expect(resolveFallbackRoutes([given.model], available, [given])).toEqual({
+      ok: true,
+      routes: [route('openrouter', 'api_key', 'deepseek/deepseek-chat-v3.1:free', 'Work')],
+    });
+  });
+
+  it('carries over persisted routes without re-checking discovery', () => {
+    const stale = route('anthropic', 'api_key', 'claude-gone');
+    expect(resolveFallbackRoutes([stale.model], available, [stale], [stale])).toEqual({
+      ok: true,
+      routes: [stale],
+    });
+    expect(resolveFallbackRoutes([stale.model], available, undefined, [stale])).toEqual({
+      ok: true,
+      routes: [stale],
+    });
+  });
+
+  it('resolves names alone when the caller routes do not line up or do not resolve', () => {
+    expect(
+      resolveFallbackRoutes(['llama-3.3-70b'], available, [route('groq', 'api_key', 'other')]),
+    ).toEqual({ ok: true, routes: [route('groq', 'api_key', 'llama-3.3-70b')] });
+    expect(
+      resolveFallbackRoutes(['llama-3.3-70b'], available, [
+        route('mistral', 'api_key', 'llama-3.3-70b'),
+      ]),
+    ).toEqual({ ok: true, routes: [route('groq', 'api_key', 'llama-3.3-70b')] });
+  });
+
+  it('names the first fallback it cannot resolve', () => {
+    expect(resolveFallbackRoutes(['llama-3.3-70b', 'nope'], available)).toEqual({
+      ok: false,
+      model: 'nope',
+    });
+    expect(describeUnresolvedFallback('nope')).toBe(
+      'Cannot resolve fallback model "nope" to a single connected provider. ' +
+        'Pass an explicit (provider, authType, model) route, or connect exactly one provider that offers this model.',
     );
   });
 });

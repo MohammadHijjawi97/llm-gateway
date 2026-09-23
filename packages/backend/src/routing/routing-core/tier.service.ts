@@ -14,7 +14,12 @@ import {
   TierSlot,
 } from 'manifest-shared';
 import { effectiveRoute, readFallbackRoutes, routeMatches } from './route-helpers';
-import { describeUnresolvedModel, resolveModelRoute } from './resolve-model-route';
+import {
+  describeUnresolvedFallback,
+  describeUnresolvedModel,
+  resolveFallbackRoutes,
+  resolveModelRoute,
+} from './resolve-model-route';
 import { assertStreamableResponseMode } from './response-mode-guard';
 
 @Injectable()
@@ -104,7 +109,7 @@ export class TierService {
     });
     if (!resolution.ok) {
       throw new BadRequestException(
-        describeUnresolvedModel(model, resolution.reason, available, provider),
+        describeUnresolvedModel(model, resolution.reason, available, { provider, authType }),
       );
     }
     const route = resolution.route;
@@ -305,15 +310,8 @@ export class TierService {
    * malformed payloads). It does not narrow which inputs reach this path.
    *
    * `keyLabel` on each route is preserved as-is — the caller decides which
-   * provider key each fallback pins to.
-   *
-   * Entries carried over from the persisted `fallback_routes` are matched by
-   * identity and trusted without re-checking live discovery: they were
-   * validated when first added, and re-validating them would make it
-   * impossible to shrink a list once a provider disconnects or a model is
-   * de-listed — the stale entry could never be removed (every remove is a
-   * PUT of the surviving entries). Only genuinely new entries must resolve
-   * against the connected providers.
+   * provider key each fallback pins to. See `resolveFallbackRoutes` for how
+   * persisted entries are carried over.
    */
   private async buildFallbackRoutes(
     agentId: string,
@@ -324,54 +322,10 @@ export class TierService {
   ): Promise<ModelRoute[] | null> {
     if (models.length === 0) return null;
     const available = await this.discoveryService.getModelsForAgent(tenantId, agentId);
-    if (routes && routes.length === models.length) {
-      const aligned = routes.every((r, i) => r.model === models[i]);
-      // Cross-check each caller-provided route against the persisted list and
-      // the discovered model list — a (provider, authType, model) tuple is
-      // only safe to persist if it is an entry the user already had (matched
-      // by identity, consumed from the pool so duplicates need duplicates in
-      // storage) or actually corresponds to a connected provider that offers
-      // the model. Without this, a malformed payload could write a route that
-      // would later route to non-existent credentials. keyLabel is not
-      // validated here against the provider key set — that lives in
-      // ProviderService.cleanupProviderReferences and runs on every
-      // provider mutation.
-      const pool = [...(storedRoutes ?? [])];
-      const validated =
-        aligned &&
-        routes.every((r) => {
-          const kept = pool.findIndex((s) => routeMatches(s, r));
-          if (kept >= 0) {
-            pool.splice(kept, 1);
-            return true;
-          }
-          return available.some(
-            (m) =>
-              m.id === r.model &&
-              m.provider.toLowerCase() === r.provider.toLowerCase() &&
-              m.authType === r.authType,
-          );
-        });
-      if (validated) return routes;
+    const resolution = resolveFallbackRoutes(models, available, routes, storedRoutes);
+    if (!resolution.ok) {
+      throw new BadRequestException(describeUnresolvedFallback(resolution.model));
     }
-    const pool = [...(storedRoutes ?? [])];
-    const resolved: ModelRoute[] = [];
-    for (const m of models) {
-      const kept = pool.findIndex((s) => s.model === m);
-      if (kept >= 0) {
-        resolved.push(pool[kept]);
-        pool.splice(kept, 1);
-        continue;
-      }
-      const resolution = resolveModelRoute(m, available);
-      if (!resolution.ok) {
-        throw new BadRequestException(
-          `Cannot resolve fallback model "${m}" to a single connected provider. ` +
-            `Pass an explicit (provider, authType, model) route, or connect exactly one provider that offers this model.`,
-        );
-      }
-      resolved.push(resolution.route);
-    }
-    return resolved;
+    return resolution.routes;
   }
 }

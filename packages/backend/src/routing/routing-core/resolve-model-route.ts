@@ -1,6 +1,7 @@
 import type { AuthType, ModelRoute } from 'manifest-shared';
 import type { DiscoveredModel } from '../../model-discovery/model-fetcher';
 import { openAiModelId } from './public-model-id';
+import { routeMatches } from './route-helpers';
 
 /** What the caller already knows about the route, besides the model name. */
 export interface ModelRouteScope {
@@ -9,9 +10,13 @@ export interface ModelRouteScope {
   keyLabel?: string | null;
 }
 
+export type UnresolvedReason = 'not_found' | 'wrong_provider' | 'wrong_auth_type' | 'ambiguous';
+
 export type ModelRouteResolution =
-  | { ok: true; route: ModelRoute }
-  | { ok: false; reason: 'not_found' | 'wrong_provider' | 'ambiguous' };
+  { ok: true; route: ModelRoute } | { ok: false; reason: UnresolvedReason };
+
+export type FallbackRoutesResolution =
+  { ok: true; routes: ModelRoute[] } | { ok: false; model: string };
 
 const HINT_LIMIT = 20;
 
@@ -31,8 +36,8 @@ export function matchesModelName(model: DiscoveredModel, name: string): boolean 
  * models. The stored route always carries the canonical provider and internal
  * model id, whichever name the caller used.
  *
- * An explicit `authType` is taken as given (it is not validated against
- * discovery), so the name only has to identify a single model of the provider.
+ * An explicit `authType` must match the discovered one, so a subscription
+ * model can never be stored as a metered `api_key` route (or the reverse).
  */
 export function resolveModelRoute(
   name: string,
@@ -43,29 +48,106 @@ export function resolveModelRoute(
   if (named.length === 0) return { ok: false, reason: 'not_found' };
 
   const provider = scope.provider?.toLowerCase();
-  const candidates = provider ? named.filter((m) => m.provider.toLowerCase() === provider) : named;
-  if (candidates.length === 0) return { ok: false, reason: 'wrong_provider' };
+  const inProvider = provider ? named.filter((m) => m.provider.toLowerCase() === provider) : named;
+  if (inProvider.length === 0) return { ok: false, reason: 'wrong_provider' };
+
+  const candidates = scope.authType
+    ? inProvider.filter((m) => m.authType === scope.authType)
+    : inProvider;
+  if (candidates.length === 0) return { ok: false, reason: 'wrong_auth_type' };
 
   const routeKey = (m: DiscoveredModel) =>
-    [m.provider.toLowerCase(), scope.authType ?? m.authType, m.id].join('\u0000');
+    [m.provider.toLowerCase(), m.authType, m.id].join('\u0000');
   if (new Set(candidates.map(routeKey)).size > 1) return { ok: false, reason: 'ambiguous' };
 
   const match = candidates[0];
   const route: ModelRoute = {
     provider: match.provider,
-    authType: scope.authType ?? match.authType!,
+    authType: match.authType!,
     model: match.id,
   };
   return { ok: true, route: scope.keyLabel ? { ...route, keyLabel: scope.keyLabel } : route };
 }
 
+/**
+ * Resolve a fallback chain. Caller-sent routes win when every one of them
+ * resolves, so their key pins survive; otherwise each name is resolved alone.
+ *
+ * Entries carried over from the persisted chain are matched by identity and
+ * trusted without re-checking discovery: they were validated when first added,
+ * and re-validating them would make it impossible to shrink a list once a
+ * provider disconnects (every remove is a PUT of the surviving entries).
+ */
+export function resolveFallbackRoutes(
+  models: readonly string[],
+  available: readonly DiscoveredModel[],
+  routes?: readonly ModelRoute[],
+  storedRoutes?: readonly ModelRoute[] | null,
+): FallbackRoutesResolution {
+  const aligned =
+    routes !== undefined &&
+    routes.length === models.length &&
+    routes.every((r, i) => r.model === models[i]);
+  const fromRoutes = aligned ? resolveGivenRoutes(routes, available, storedRoutes) : null;
+  if (fromRoutes) return { ok: true, routes: fromRoutes };
+
+  const pool = [...(storedRoutes ?? [])];
+  const resolved: ModelRoute[] = [];
+  for (const model of models) {
+    const kept = pool.findIndex((s) => s.model === model);
+    if (kept >= 0) {
+      resolved.push(pool.splice(kept, 1)[0]);
+      continue;
+    }
+    const resolution = resolveModelRoute(model, available);
+    if (!resolution.ok) return { ok: false, model };
+    resolved.push(resolution.route);
+  }
+  return { ok: true, routes: resolved };
+}
+
+/** Canonical copies of caller-sent routes, or null if any of them is invalid. */
+function resolveGivenRoutes(
+  routes: readonly ModelRoute[],
+  available: readonly DiscoveredModel[],
+  storedRoutes?: readonly ModelRoute[] | null,
+): ModelRoute[] | null {
+  const pool = [...(storedRoutes ?? [])];
+  const resolved: ModelRoute[] = [];
+  for (const route of routes) {
+    const kept = pool.findIndex((s) => routeMatches(s, route));
+    if (kept >= 0) {
+      pool.splice(kept, 1);
+      resolved.push(route);
+      continue;
+    }
+    const resolution = resolveModelRoute(route.model, available, {
+      provider: route.provider,
+      authType: route.authType,
+      keyLabel: route.keyLabel,
+    });
+    if (!resolution.ok) return null;
+    resolved.push(resolution.route);
+  }
+  return resolved;
+}
+
+/** User-facing reason a fallback model could not be resolved. */
+export function describeUnresolvedFallback(model: string): string {
+  return (
+    `Cannot resolve fallback model "${model}" to a single connected provider. ` +
+    `Pass an explicit (provider, authType, model) route, or connect exactly one provider that offers this model.`
+  );
+}
+
 /** User-facing reason a model name could not be resolved. */
 export function describeUnresolvedModel(
   name: string,
-  reason: Exclude<ModelRouteResolution, { ok: true }>['reason'],
+  reason: UnresolvedReason,
   available: readonly DiscoveredModel[],
-  provider?: string,
+  scope: Pick<ModelRouteScope, 'provider' | 'authType'> = {},
 ): string {
+  const { provider, authType } = scope;
   if (reason === 'ambiguous') {
     return (
       `Model "${name}" is offered by multiple providers — pass an explicit ` +
@@ -74,6 +156,10 @@ export function describeUnresolvedModel(
   }
   if (reason === 'wrong_provider') {
     return `Model "${name}" is not offered by provider "${provider}" for this agent.`;
+  }
+  if (reason === 'wrong_auth_type') {
+    const by = provider ? ` by provider "${provider}"` : '';
+    return `Model "${name}" is not offered with auth type "${authType}"${by} for this agent.`;
   }
   // Suggest the named provider's own models, under the names callers can send.
   const pool = provider

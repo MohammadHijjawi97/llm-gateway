@@ -130,7 +130,9 @@ function makeDeps(): McpToolDeps {
     modelDiscovery: {
       getModelsForAgent: jest
         .fn()
-        .mockResolvedValue([{ id: 'gpt-4o', provider: 'openai', displayName: 'GPT-4o' }]),
+        .mockResolvedValue([
+          { id: 'gpt-4o', provider: 'openai', displayName: 'GPT-4o', authType: 'api_key' },
+        ]),
       discoverModels: jest.fn().mockResolvedValue(undefined),
       refreshProvider: jest.fn().mockResolvedValue({ ok: true, model_count: 1 }),
       discoverAllForAgent: jest.fn().mockResolvedValue(undefined),
@@ -665,6 +667,49 @@ describe('MCP tools', () => {
         (await call(tools, 'manifest_agent_configure', { agent: 'demo', models: ['gpt-4o'] }))
           .error,
       ).toBe(true);
+    });
+
+    it('checks the primary against its provider and takes its auth type from discovery', async () => {
+      const deps = makeDeps();
+      (deps.modelDiscovery.getModelsForAgent as jest.Mock).mockResolvedValue([
+        { id: 'gpt-4o', provider: 'openai', displayName: 'GPT-4o', authType: 'api_key' },
+        { id: 'gpt-5.4', provider: 'openai', displayName: 'GPT-5.4', authType: 'subscription' },
+      ]);
+      const tools = registerAll(deps);
+
+      // A model another provider offers no longer passes the guard.
+      const wrong = await call(tools, 'manifest_agent_configure', {
+        agent: 'demo',
+        models: ['gpt-4o'],
+        provider: 'anthropic',
+      });
+      expect(wrong.error).toBe(true);
+      expect(wrong.text).toContain('not offered by provider "anthropic"');
+
+      // An unknown fallback is still named.
+      const fallback = await call(tools, 'manifest_agent_configure', {
+        agent: 'demo',
+        models: ['gpt-4o', 'nope'],
+        provider: 'openai',
+      });
+      expect(fallback.error).toBe(true);
+      expect(fallback.text).toContain('Not in the models discovered for "demo": nope');
+
+      // No auth_type: a subscription model stays a subscription route.
+      await call(tools, 'manifest_agent_configure', {
+        agent: 'demo',
+        models: ['openai/gpt-5.4-subscription'],
+        provider: 'openai',
+      });
+      expect(deps.tiers.setOverride).toHaveBeenLastCalledWith(
+        'agent-1',
+        expect.anything(),
+        'default',
+        'openai/gpt-5.4-subscription',
+        'openai',
+        'subscription',
+        undefined,
+      );
     });
 
     it('rejects tier-only config and rolls back a failed new custom tier', async () => {

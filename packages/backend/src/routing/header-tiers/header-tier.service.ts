@@ -12,8 +12,12 @@ import {
 import { HeaderTier } from '../../entities/header-tier.entity';
 import { ModelDiscoveryService } from '../../model-discovery/model-discovery.service';
 import { RoutingCacheService } from '../routing-core/routing-cache.service';
-import { explicitRoute, readFallbackRoutes, routeMatches } from '../routing-core/route-helpers';
-import { resolveModelRoute } from '../routing-core/resolve-model-route';
+import { explicitRoute, readFallbackRoutes } from '../routing-core/route-helpers';
+import {
+  describeUnresolvedFallback,
+  resolveFallbackRoutes,
+  resolveModelRoute,
+} from '../routing-core/resolve-model-route';
 import { assertStreamableResponseMode } from '../routing-core/response-mode-guard';
 
 export const RESERVED_HEADER_KEYS = new Set<string>([
@@ -292,45 +296,11 @@ export class HeaderTierService {
   ): Promise<ModelRoute[] | null> {
     if (models.length === 0) return null;
     const available = await this.discoveryService.getModelsForAgent(tenantId, agentId);
-    if (routes && routes.length === models.length) {
-      const aligned = routes.every((r, i) => r.model === models[i]);
-      const pool = [...(storedRoutes ?? [])];
-      const validated =
-        aligned &&
-        routes.every((r) => {
-          const kept = pool.findIndex((s) => routeMatches(s, r));
-          if (kept >= 0) {
-            pool.splice(kept, 1);
-            return true;
-          }
-          return available.some(
-            (m) =>
-              m.id === r.model &&
-              m.provider.toLowerCase() === r.provider.toLowerCase() &&
-              m.authType === r.authType,
-          );
-        });
-      if (validated) return routes;
+    const resolution = resolveFallbackRoutes(models, available, routes, storedRoutes);
+    if (!resolution.ok) {
+      throw new BadRequestException(describeUnresolvedFallback(resolution.model));
     }
-    const pool = [...(storedRoutes ?? [])];
-    const resolved: ModelRoute[] = [];
-    for (const m of models) {
-      const kept = pool.findIndex((s) => s.model === m);
-      if (kept >= 0) {
-        resolved.push(pool[kept]);
-        pool.splice(kept, 1);
-        continue;
-      }
-      const resolution = resolveModelRoute(m, available);
-      if (!resolution.ok) {
-        throw new BadRequestException(
-          `Cannot resolve fallback model "${m}" to a single connected provider. ` +
-            `Pass an explicit (provider, authType, model) route, or connect exactly one provider that offers this model.`,
-        );
-      }
-      resolved.push(resolution.route);
-    }
-    return resolved;
+    return resolution.routes;
   }
 
   private async findOrThrow(agentId: string, id: string): Promise<HeaderTier> {
