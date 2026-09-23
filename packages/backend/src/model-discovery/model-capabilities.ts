@@ -1,5 +1,6 @@
 import { PROVIDER_BY_ID_OR_ALIAS } from '../common/constants/providers';
 import { resolveMetadataEntry } from './metadata-identity';
+import { MODEL_MODALITIES } from 'manifest-shared';
 import type { AuthType, ModelCapability, ModelModality } from 'manifest-shared';
 import type { DiscoveredModel } from './model-fetcher';
 import type { ModelsDevModelEntry } from '../database/models-dev-sync.service';
@@ -8,13 +9,6 @@ import { lookupKnownModalities } from './known-model-modalities';
 type RawModalities = { input?: string[]; output?: string[] } | undefined;
 
 const DEFAULT_MODALITIES: readonly ModelModality[] = ['text'];
-
-const MODALITY_CAPABILITIES: ReadonlyMap<string, ModelModality> = new Map([
-  ['text', 'text'],
-  ['image', 'image'],
-  ['audio', 'audio'],
-  ['video', 'video'],
-]);
 
 const STREAMING_ENDPOINT_PROVIDERS = new Set([
   'anthropic',
@@ -41,6 +35,22 @@ const STREAMING_ENDPOINT_PROVIDERS = new Set([
   'xiaomi',
   'zai',
 ]);
+
+/**
+ * Parse an upstream modality list (a provider's /models response, models.dev)
+ * into known modalities in canonical order. Unknown values are ignored;
+ * returns undefined when nothing is recognised, which callers read as unknown.
+ */
+export function parseModalities(value: unknown): readonly ModelModality[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const upstream = new Set(
+    value
+      .filter((entry): entry is string => typeof entry === 'string')
+      .map((entry) => entry.toLowerCase()),
+  );
+  const modalities = MODEL_MODALITIES.filter((modality) => upstream.has(modality));
+  return modalities.length > 0 ? modalities : undefined;
+}
 
 export interface ModelModalities {
   input: readonly ModelModality[];
@@ -174,12 +184,7 @@ function resolveProviderId(providerId: string): string {
 }
 
 function normalizeModalities(values: readonly string[] | undefined): readonly ModelModality[] {
-  const out: ModelModality[] = [];
-  for (const value of values ?? []) {
-    const modality = MODALITY_CAPABILITIES.get(value.toLowerCase());
-    if (modality && !out.includes(modality)) out.push(modality);
-  }
-  return out.length > 0 ? out : DEFAULT_MODALITIES;
+  return parseModalities(values) ?? DEFAULT_MODALITIES;
 }
 
 function isOpenAiNonStreamingModel(modelId: string): boolean {

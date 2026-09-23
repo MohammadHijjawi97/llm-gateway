@@ -1421,10 +1421,10 @@ describe('ModelDiscoveryService', () => {
       expect(allam?.capabilities ?? []).not.toContain('tools');
     });
 
-    it('should drop models models.dev says cannot take or return text', async () => {
-      // Video generators, image-only generators and speech recognisers cannot
-      // answer a chat request. A missing entry or missing modality list is
-      // unknown, so those models are kept.
+    it('should drop models whose resolved modalities carry no text', async () => {
+      // Video generators and speech recognisers cannot answer a chat request,
+      // whether models.dev or the provider's own /models response says so. A
+      // model no source describes is kept.
       const entries: Record<string, unknown> = {
         'veo-3.1-generate-preview': {
           id: 'veo-3.1-generate-preview',
@@ -1459,6 +1459,7 @@ describe('ModelDiscoveryService', () => {
         makeModel({ id: 'chat-model' }),
         makeModel({ id: 'partial-entry' }),
         makeModel({ id: 'unknown-model' }),
+        makeModel({ id: 'native-video', inputModalities: ['text'], outputModalities: ['video'] }),
       ]);
 
       const result = await service.discoverModels(makeProvider());

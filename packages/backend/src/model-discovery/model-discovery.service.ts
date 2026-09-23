@@ -328,22 +328,16 @@ export class ModelDiscoveryService {
           })
         : enriched;
 
-    // Drop models models.dev knows cannot hold a text conversation: no text
-    // in (speech recognition, video analysis) or no text out (video, image,
-    // speech generation). Tool support is deliberately NOT a criterion: routes
-    // are user-chosen, and a tool-less chat model (Groq's allam-2-7b, #2963)
-    // still serves requests that send no tools; its capabilities omit 'tools'.
-    // Models without a models.dev entry are kept (capabilities unknown).
-    const filtered = reconciled.filter((model) => {
-      const { entry: mdEntry } = resolveMetadataEntry(
-        provider.provider,
-        model.id,
-        (providerId, modelId) =>
-          this.modelsDevSync?.lookupModelCapabilities(providerId, modelId) ?? null,
-      );
-      if (!mdEntry) return true;
-      return carriesText(mdEntry.inputModalities) && carriesText(mdEntry.outputModalities);
-    });
+    // Drop models that cannot hold a text conversation: no text in (speech
+    // recognition, video analysis) or no text out (video, image, speech
+    // generation). Modalities are the ones enrichment resolved from the
+    // provider's own /models response, models.dev, or the curated list; a
+    // model no source describes is kept. Tool support is deliberately NOT a
+    // criterion: routes are user-chosen, and a tool-less chat model (Groq's
+    // allam-2-7b, #2963) still serves requests that send no tools.
+    const filtered = reconciled.filter(
+      (model) => carriesText(model.inputModalities) && carriesText(model.outputModalities),
+    );
 
     const previousCachedCount = Array.isArray(provider.cached_models)
       ? provider.cached_models.length

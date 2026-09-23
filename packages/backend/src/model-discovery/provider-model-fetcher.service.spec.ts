@@ -1485,6 +1485,25 @@ describe('ProviderModelFetcherService', () => {
       ]);
     });
 
+    it('should read the modalities Groq publishes on each model', async () => {
+      fetchSpy.mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          data: [
+            { id: 'allam-2-7b', input_modalities: ['text'], output_modalities: ['text'] },
+            { id: 'openai/gpt-oss-20b' },
+          ],
+        }),
+      });
+
+      const [allam, gptOss] = await service.fetch('groq', 'gsk_test');
+
+      expect(allam.inputModalities).toEqual(['text']);
+      expect(allam.outputModalities).toEqual(['text']);
+      expect(gptOss.inputModalities).toBeUndefined();
+      expect(gptOss.outputModalities).toBeUndefined();
+    });
+
     it('should hit the Groq models endpoint with bearer auth', async () => {
       fetchSpy.mockResolvedValue({
         ok: true,

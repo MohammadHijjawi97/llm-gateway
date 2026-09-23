@@ -1,5 +1,6 @@
 import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { DiscoveredModel, FetcherConfig, DEFAULT_CONTEXT_WINDOW } from './model-fetcher';
+import { parseModalities } from './model-capabilities';
 import {
   getManagedFreeLiteLlmModelsUrl,
   MANAGED_FREE_PROVIDER_CONFIGS,
@@ -34,7 +35,6 @@ import {
   getSubscriptionKnownModels,
   META_MODEL_API_CONTEXT_WINDOW,
   META_MODEL_API_MODEL_BY_ID,
-  MODEL_MODALITIES,
   type ModelCapability,
   type ModelModality,
 } from 'manifest-shared';
@@ -75,10 +75,16 @@ interface ModelParserConfig<T> {
   outputPricePerToken?: number | null;
   capabilityReasoning?: boolean;
   capabilityCode?: boolean | ((entry: T) => boolean);
-  inputModalities?: readonly ModelModality[];
-  outputModalities?: readonly ModelModality[];
+  inputModalities?: PerEntry<T, readonly ModelModality[] | undefined>;
+  outputModalities?: PerEntry<T, readonly ModelModality[] | undefined>;
   supportedEndpoints?: (entry: T) => readonly string[] | undefined;
   qualityScore?: number;
+}
+
+type PerEntry<T, V> = V | ((entry: T) => V);
+
+function resolvePerEntry<T, V>(value: PerEntry<T, V>, entry: T): V {
+  return typeof value === 'function' ? (value as (entry: T) => V)(entry) : value;
 }
 
 function createModelParser<T>(
@@ -95,6 +101,8 @@ function createModelParser<T>(
         const ctxVal = config.contextWindow ?? DEFAULT_CONTEXT_WINDOW;
         const contextWindowSource = config.contextWindowSource?.(entry);
         const supportedEndpoints = config.supportedEndpoints?.(entry);
+        const inputModalities = resolvePerEntry(config.inputModalities, entry);
+        const outputModalities = resolvePerEntry(config.outputModalities, entry);
         return {
           id,
           displayName: config.getDisplayName(entry, id),
@@ -108,8 +116,8 @@ function createModelParser<T>(
             typeof config.capabilityCode === 'function'
               ? config.capabilityCode(entry)
               : (config.capabilityCode ?? false),
-          ...(config.inputModalities ? { inputModalities: config.inputModalities } : {}),
-          ...(config.outputModalities ? { outputModalities: config.outputModalities } : {}),
+          ...(inputModalities ? { inputModalities } : {}),
+          ...(outputModalities ? { outputModalities } : {}),
           ...(supportedEndpoints && supportedEndpoints.length > 0 ? { supportedEndpoints } : {}),
           qualityScore: config.qualityScore ?? 3,
         };
@@ -130,6 +138,9 @@ interface OpenAIModelEntry {
   object?: string;
   owned_by?: string;
   supported_endpoints?: unknown;
+  /** Non-standard, but sent by some OpenAI-compatible providers (e.g. Groq). */
+  input_modalities?: unknown;
+  output_modalities?: unknown;
 }
 
 interface PioneerModelEntry extends OpenAIModelEntry {
@@ -177,6 +188,8 @@ const parseOpenAI = createModelParser<OpenAIModelEntry>({
   filter: (entry) => typeof entry.id === 'string' && entry.id.length > 0,
   getId: (entry) => entry.id,
   getDisplayName: (_entry, id) => id,
+  inputModalities: (entry) => parseModalities(entry.input_modalities),
+  outputModalities: (entry) => parseModalities(entry.output_modalities),
 });
 
 /** Keep only the configured model family and prefer LiteLLM's vendor-prefixed ID. */
@@ -216,18 +229,6 @@ function perMillionToPerToken(value: number | null | undefined): number | null {
   return typeof value === 'number' && Number.isFinite(value) && value >= 0
     ? value / 1_000_000
     : null;
-}
-
-function parseModalities(value: unknown): readonly ModelModality[] | undefined {
-  if (!Array.isArray(value)) return undefined;
-  const allowed = new Set<ModelModality>(['text', 'image', 'audio', 'video']);
-  const modalities: ModelModality[] = [];
-  for (const raw of value) {
-    if (typeof raw !== 'string') continue;
-    const modality = raw.toLowerCase() as ModelModality;
-    if (allowed.has(modality) && !modalities.includes(modality)) modalities.push(modality);
-  }
-  return modalities.length > 0 ? modalities : undefined;
 }
 
 function fastestLiveHuggingFaceProvider(value: unknown): HuggingFaceProviderEntry | undefined {
@@ -598,15 +599,6 @@ interface OpenRouterModelEntry {
   pricing?: { prompt?: string; completion?: string };
 }
 
-function normalizeOpenRouterModalities(
-  values: readonly string[] | undefined,
-): readonly ModelModality[] | undefined {
-  if (!values?.length) return undefined;
-  const upstreamModalities = new Set(values.map((value) => value.toLowerCase()));
-  const modalities = MODEL_MODALITIES.filter((modality) => upstreamModalities.has(modality));
-  return modalities.length > 0 ? modalities : undefined;
-}
-
 interface FireworksModelEntry {
   name: string;
   displayName?: string;
@@ -646,8 +638,8 @@ function parseOpenRouter(body: unknown, provider: string): DiscoveredModel[] {
       const entry = m as OpenRouterModelEntry;
       const prompt = entry.pricing?.prompt ? Number(entry.pricing.prompt) : null;
       const completion = entry.pricing?.completion ? Number(entry.pricing.completion) : null;
-      const inputModalities = normalizeOpenRouterModalities(entry.architecture?.input_modalities);
-      const outputModalities = normalizeOpenRouterModalities(entry.architecture?.output_modalities);
+      const inputModalities = parseModalities(entry.architecture?.input_modalities);
+      const outputModalities = parseModalities(entry.architecture?.output_modalities);
       return {
         id: entry.id,
         displayName: entry.name || entry.id,
