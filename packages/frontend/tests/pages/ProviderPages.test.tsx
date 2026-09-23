@@ -341,8 +341,36 @@ describe('provider pages', () => {
 
   it('keeps a provider closed to new subscriptions out of the catalog until connected', async () => {
     render(() => <Subscriptions />);
-    await waitFor(() => expect(screen.getByText('Supported subscription providers')).toBeDefined());
+    // Anthropic has no connection in the fixture, so it only shows once the catalog renders.
+    await waitFor(() => expect(screen.getByText('Anthropic')).toBeDefined());
     expect(screen.queryByText('Google')).toBeNull();
+  });
+
+  it('drops a closed provider from the catalog once its connections are inactive', async () => {
+    mockGetGlobalProviders.mockResolvedValue({
+      ...globalProvidersResponse,
+      providers: [
+        ...globalProvidersResponse.providers,
+        {
+          provider: 'gemini',
+          auth_type: 'subscription',
+          connection_count: 1,
+          connections: [connection('sub-google-old', 'Old Google', false)],
+          total_models: 0,
+          consumption_tokens: 0,
+          consumption_messages: 0,
+          consumption_cost: 0,
+          last_used_at: null,
+          sparkline_7d: [],
+        },
+      ],
+    });
+
+    render(() => <Subscriptions />);
+
+    await waitFor(() => expect(screen.getByText('Old Google')).toBeDefined());
+    // Listed once, in the connections table only.
+    expect(screen.getAllByText('Google').length).toBe(1);
   });
 
   it('keeps an existing connection to a closed provider listed and reachable', async () => {

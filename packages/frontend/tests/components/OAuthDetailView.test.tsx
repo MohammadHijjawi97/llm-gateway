@@ -615,6 +615,11 @@ describe('OAuthDetailView', () => {
       /Invalid or expired OAuth state/,
     ],
     ['a generic hint when the server says nothing', new Error(''), /Failed to exchange token/],
+    [
+      'a generic hint on a network failure',
+      new TypeError('Failed to fetch'),
+      /Failed to exchange token/,
+    ],
   ])('handlePasteSubmit shows %s when exchange fails', async (_case, error, expected) => {
     mockGetOpenaiOAuthUrl.mockResolvedValue({ url: 'https://oauth.openai.com/authorize' });
     mockSubmitOpenaiOAuthCallback.mockRejectedValue(error);

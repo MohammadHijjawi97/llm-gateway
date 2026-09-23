@@ -414,7 +414,13 @@ const ProviderConnectionsPage: Component<ProviderConnectionsPageProps> = (props)
   };
 
   const catalogProviders = () =>
-    providerListForKind(props.kind, (providerId) => connectedByProvider().has(providerId));
+    providerListForKind(
+      props.kind,
+      (providerId) =>
+        connectedByProvider()
+          .get(providerId)
+          ?.connections.some((connection) => connection.is_active) ?? false,
+    );
 
   const activeConnectionCount = (providerId: string) =>
     connectedByProvider()
