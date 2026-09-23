@@ -1397,35 +1397,73 @@ describe('ModelDiscoveryService', () => {
       expect(result[0].outputPricePerToken).toBeNull();
     });
 
-    it('should filter tool-less models of capability-only providers', async () => {
-      // The tool-support filter reads the same capability catalog as
-      // enrichment, so a Kilo model models.dev marks toolCall=false is
-      // dropped while an unknown one is kept.
+    it('should keep tool-less chat models without advertising tools', async () => {
+      // Regression for #2963: Groq's allam-2-7b is a text chat model that
+      // models.dev marks toolCall=false. It must stay in the catalog, flagged
+      // as unable to call tools, rather than silently disappear.
       mockModelsDevSync.lookupModelCapabilities.mockImplementation(
         (providerId: string, modelId: string) =>
-          providerId === 'kilo' && modelId === 'vendor/no-tools'
-            ? { id: 'vendor/no-tools', name: 'No Tools', toolCall: false }
+          providerId === 'groq' && modelId === 'allam-2-7b'
+            ? { id: 'allam-2-7b', name: 'ALLaM 2 7B', toolCall: false }
             : null,
       );
 
       fetcher.fetch.mockResolvedValue([
-        makeModel({
-          id: 'vendor/no-tools',
-          provider: 'kilo',
-          inputPricePerToken: 0.000001,
-          outputPricePerToken: 0.000002,
-        }),
-        makeModel({
-          id: 'vendor/unknown',
-          provider: 'kilo',
-          inputPricePerToken: 0.000001,
-          outputPricePerToken: 0.000002,
-        }),
+        makeModel({ id: 'allam-2-7b', provider: 'groq' }),
+        makeModel({ id: 'openai/gpt-oss-20b', provider: 'groq' }),
       ]);
 
-      const result = await service.discoverModels(makeProvider({ provider: 'kilo' }));
+      const result = await service.discoverModels(makeProvider({ provider: 'groq' }));
 
-      expect(result.map((m) => m.id)).toEqual(['vendor/unknown']);
+      expect(result.map((m) => m.id)).toEqual(['allam-2-7b', 'openai/gpt-oss-20b']);
+      const allam = result.find((m) => m.id === 'allam-2-7b');
+      expect(allam?.capabilityCode).toBe(false);
+      expect(allam?.capabilities ?? []).not.toContain('tools');
+    });
+
+    it('should drop models models.dev says cannot take or return text', async () => {
+      // Video generators, image-only generators and speech recognisers cannot
+      // answer a chat request. A missing entry or missing modality list is
+      // unknown, so those models are kept.
+      const entries: Record<string, unknown> = {
+        'veo-3.1-generate-preview': {
+          id: 'veo-3.1-generate-preview',
+          name: 'Veo',
+          toolCall: false,
+          inputModalities: ['text', 'image'],
+          outputModalities: ['video'],
+        },
+        'qwen3-asr-flash': {
+          id: 'qwen3-asr-flash',
+          name: 'ASR',
+          toolCall: false,
+          inputModalities: ['audio'],
+          outputModalities: ['text'],
+        },
+        'chat-model': {
+          id: 'chat-model',
+          name: 'Chat',
+          toolCall: true,
+          inputModalities: ['text'],
+          outputModalities: ['text'],
+        },
+        'partial-entry': { id: 'partial-entry', name: 'Partial', toolCall: false },
+      };
+      mockModelsDevSync.lookupModelCapabilities.mockImplementation(
+        (_providerId: string, modelId: string) => entries[modelId] ?? null,
+      );
+
+      fetcher.fetch.mockResolvedValue([
+        makeModel({ id: 'veo-3.1-generate-preview' }),
+        makeModel({ id: 'qwen3-asr-flash' }),
+        makeModel({ id: 'chat-model' }),
+        makeModel({ id: 'partial-entry' }),
+        makeModel({ id: 'unknown-model' }),
+      ]);
+
+      const result = await service.discoverModels(makeProvider());
+
+      expect(result.map((m) => m.id)).toEqual(['chat-model', 'partial-entry', 'unknown-model']);
     });
 
     it('should route capability lookups through lookupModelCapabilities', async () => {

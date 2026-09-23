@@ -1,7 +1,7 @@
 import { Injectable, Logger, Inject, Optional } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { type AuthType } from 'manifest-shared';
+import { type AuthType, type ModelModality } from 'manifest-shared';
 import { TenantProvider } from '../entities/tenant-provider.entity';
 import { AgentEnabledProvider } from '../entities/agent-enabled-provider.entity';
 import { CustomProvider } from '../entities/custom-provider.entity';
@@ -328,11 +328,12 @@ export class ModelDiscoveryService {
           })
         : enriched;
 
-    // Filter out models confirmed to lack tool support (models.dev toolCall === false).
-    // AI agents (OpenClaw, Hermes, SDK-based agents) almost always
-    // include tools in every request, so models without tool calling are
-    // unusable. Only filter when models.dev has data — if no entry exists we
-    // keep the model (we don't know its capabilities).
+    // Drop models models.dev knows cannot hold a text conversation: no text
+    // in (speech recognition, video analysis) or no text out (video, image,
+    // speech generation). Tool support is deliberately NOT a criterion: routes
+    // are user-chosen, and a tool-less chat model (Groq's allam-2-7b, #2963)
+    // still serves requests that send no tools; its capabilities omit 'tools'.
+    // Models without a models.dev entry are kept (capabilities unknown).
     const filtered = reconciled.filter((model) => {
       const { entry: mdEntry } = resolveMetadataEntry(
         provider.provider,
@@ -340,8 +341,8 @@ export class ModelDiscoveryService {
         (providerId, modelId) =>
           this.modelsDevSync?.lookupModelCapabilities(providerId, modelId) ?? null,
       );
-      if (mdEntry && mdEntry.toolCall === false) return false;
-      return true;
+      if (!mdEntry) return true;
+      return carriesText(mdEntry.inputModalities) && carriesText(mdEntry.outputModalities);
     });
 
     const previousCachedCount = Array.isArray(provider.cached_models)
@@ -832,4 +833,9 @@ export class ModelDiscoveryService {
     });
     return { ...model, qualityScore: score };
   }
+}
+
+/** Unknown modalities (no list) count as text so the model is kept. */
+function carriesText(modalities: readonly ModelModality[] | undefined): boolean {
+  return !modalities || modalities.includes('text');
 }
