@@ -1,4 +1,5 @@
 import { MigrationInterface, QueryRunner } from 'typeorm';
+import { InPlaceIndex, rebuildIndexInPlace } from '../index-rebuild';
 
 /**
  * Serve the Requests log's harness-scoped filters from the harness index.
@@ -12,66 +13,30 @@ import { MigrationInterface, QueryRunner } from 'typeorm';
  * unchanged, so every query that used the old index can still use it.
  *
  * Rebuilt in place under the same name, concurrently so request writes
- * continue during deploy, and every step is safe to rerun after an
- * interruption.
+ * continue during deploy; see rebuildIndexInPlace for why every step is safe
+ * to rerun in either direction.
  */
 export class CoverHarnessRequestsIndex1803100000000 implements MigrationInterface {
   name = 'CoverHarnessRequestsIndex1803100000000';
   transaction = false;
 
-  static readonly INDEX = 'IDX_requests_tenant_agent_timestamp';
-  static readonly BUILD = 'IDX_requests_tenant_agent_timestamp_next';
+  static readonly INDEX: InPlaceIndex = {
+    table: 'requests',
+    index: 'IDX_requests_tenant_agent_timestamp',
+    build: 'IDX_requests_tenant_agent_timestamp_next',
+    key: '"tenant_id", "agent_id", "timestamp"',
+    include: '"id", "status", "error_origin", "error_class", "requested_model"',
+  };
 
   public async up(queryRunner: QueryRunner): Promise<void> {
-    if (await this.isCovering(queryRunner)) return;
-    await this.rebuild(
+    await rebuildIndexInPlace(
       queryRunner,
-      'INCLUDE ("id", "status", "error_origin", "error_class", "requested_model")',
+      CoverHarnessRequestsIndex1803100000000.INDEX,
+      'covering',
     );
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {
-    if (!(await this.isCovering(queryRunner))) return;
-    await this.rebuild(queryRunner, '');
-  }
-
-  /**
-   * Build the replacement under a temporary name, then drop the live index and
-   * rename. The name is missing only between two catalog statements, and a
-   * rerun after a crash in that gap finds the build and simply renames it.
-   */
-  private async rebuild(queryRunner: QueryRunner, include: string): Promise<void> {
-    const { INDEX, BUILD } = CoverHarnessRequestsIndex1803100000000;
-    await this.dropIfInvalid(queryRunner, BUILD);
-    await queryRunner.query(
-      `CREATE INDEX CONCURRENTLY IF NOT EXISTS "${BUILD}" ON "requests" ("tenant_id", "agent_id", "timestamp") ${include}`.trim(),
-    );
-    await queryRunner.query(`DROP INDEX CONCURRENTLY IF EXISTS "${INDEX}"`);
-    await queryRunner.query(`ALTER INDEX "${BUILD}" RENAME TO "${INDEX}"`);
-  }
-
-  /** True when the live index already carries the covering columns. */
-  private async isCovering(queryRunner: QueryRunner): Promise<boolean> {
-    const rows: unknown[] = await queryRunner.query(
-      `SELECT 1 FROM pg_indexes
-        WHERE schemaname = current_schema() AND indexname = $1 AND indexdef LIKE '%INCLUDE%'`,
-      [CoverHarnessRequestsIndex1803100000000.INDEX],
-    );
-    return rows.length > 0;
-  }
-
-  /**
-   * A cancelled CONCURRENTLY build leaves an INVALID shell that
-   * `CREATE ... IF NOT EXISTS` would skip over by name. Drop only that shell,
-   * never a valid index a previous run finished building.
-   */
-  private async dropIfInvalid(queryRunner: QueryRunner, indexName: string): Promise<void> {
-    const rows: unknown[] = await queryRunner.query(
-      `SELECT 1 FROM pg_index i JOIN pg_class c ON c.oid = i.indexrelid WHERE c.relname = $1 AND NOT i.indisvalid`,
-      [indexName],
-    );
-    if (rows.length > 0) {
-      await queryRunner.query(`DROP INDEX CONCURRENTLY IF EXISTS "${indexName}"`);
-    }
+    await rebuildIndexInPlace(queryRunner, CoverHarnessRequestsIndex1803100000000.INDEX, 'plain');
   }
 }

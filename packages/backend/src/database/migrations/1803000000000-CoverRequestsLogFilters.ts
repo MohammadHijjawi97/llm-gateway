@@ -1,4 +1,5 @@
 import { MigrationInterface, QueryRunner } from 'typeorm';
+import { InPlaceIndex, rebuildIndexInPlace } from '../index-rebuild';
 
 /**
  * Serve the Requests log filters from indexes instead of scattered heap pages.
@@ -16,29 +17,26 @@ import { MigrationInterface, QueryRunner } from 'typeorm';
  *    rather than fetching every attempt's heap row to test the column.
  *
  * Both build concurrently so live request writes continue during deploy, and
- * every step is safe to rerun after an interruption. The Requests log runs on
+ * every step is safe to rerun after an interruption (see rebuildIndexInPlace
+ * for the requests index). The Requests log runs on
  * self-hosted installs too, so nothing is gated by mode.
  */
 export class CoverRequestsLogFilters1803000000000 implements MigrationInterface {
   name = 'CoverRequestsLogFilters1803000000000';
   transaction = false;
 
-  static readonly REQUESTS_INDEX = 'IDX_requests_tenant_timestamp';
-  static readonly REQUESTS_BUILD = 'IDX_requests_tenant_timestamp_next';
+  static readonly REQUESTS_INDEX: InPlaceIndex = {
+    table: 'requests',
+    index: 'IDX_requests_tenant_timestamp',
+    build: 'IDX_requests_tenant_timestamp_next',
+    key: '"tenant_id", "timestamp"',
+    include: '"id", "agent_id", "status", "error_origin", "error_class", "requested_model"',
+  };
   static readonly FALLBACK_INDEX = 'IDX_agent_messages_fallback_window';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
-    const { REQUESTS_BUILD, FALLBACK_INDEX } = CoverRequestsLogFilters1803000000000;
-
-    if (!(await this.isCovering(queryRunner))) {
-      await this.dropIfInvalid(queryRunner, REQUESTS_BUILD);
-      await queryRunner.query(`
-        CREATE INDEX CONCURRENTLY IF NOT EXISTS "${REQUESTS_BUILD}"
-          ON "requests" ("tenant_id", "timestamp")
-          INCLUDE ("id", "agent_id", "status", "error_origin", "error_class", "requested_model")
-      `);
-      await this.swapIn(queryRunner);
-    }
+    const { REQUESTS_INDEX, FALLBACK_INDEX } = CoverRequestsLogFilters1803000000000;
+    await rebuildIndexInPlace(queryRunner, REQUESTS_INDEX, 'covering');
 
     await this.dropIfInvalid(queryRunner, FALLBACK_INDEX);
     await queryRunner.query(`
@@ -50,38 +48,9 @@ export class CoverRequestsLogFilters1803000000000 implements MigrationInterface 
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {
-    const { REQUESTS_BUILD, FALLBACK_INDEX } = CoverRequestsLogFilters1803000000000;
+    const { REQUESTS_INDEX, FALLBACK_INDEX } = CoverRequestsLogFilters1803000000000;
     await queryRunner.query(`DROP INDEX CONCURRENTLY IF EXISTS "${FALLBACK_INDEX}"`);
-
-    if (await this.isCovering(queryRunner)) {
-      await this.dropIfInvalid(queryRunner, REQUESTS_BUILD);
-      await queryRunner.query(`
-        CREATE INDEX CONCURRENTLY IF NOT EXISTS "${REQUESTS_BUILD}"
-          ON "requests" ("tenant_id", "timestamp")
-      `);
-      await this.swapIn(queryRunner);
-    }
-  }
-
-  /**
-   * Replace the live index with the freshly built one. Dropping first and then
-   * renaming leaves the name missing only between two catalog statements, and
-   * a rerun after a crash in that gap finds the build and simply renames it.
-   */
-  private async swapIn(queryRunner: QueryRunner): Promise<void> {
-    const { REQUESTS_INDEX, REQUESTS_BUILD } = CoverRequestsLogFilters1803000000000;
-    await queryRunner.query(`DROP INDEX CONCURRENTLY IF EXISTS "${REQUESTS_INDEX}"`);
-    await queryRunner.query(`ALTER INDEX "${REQUESTS_BUILD}" RENAME TO "${REQUESTS_INDEX}"`);
-  }
-
-  /** True when the live index already carries the covering columns. */
-  private async isCovering(queryRunner: QueryRunner): Promise<boolean> {
-    const rows: unknown[] = await queryRunner.query(
-      `SELECT 1 FROM pg_indexes
-        WHERE schemaname = current_schema() AND indexname = $1 AND indexdef LIKE '%INCLUDE%'`,
-      [CoverRequestsLogFilters1803000000000.REQUESTS_INDEX],
-    );
-    return rows.length > 0;
+    await rebuildIndexInPlace(queryRunner, REQUESTS_INDEX, 'plain');
   }
 
   /**
