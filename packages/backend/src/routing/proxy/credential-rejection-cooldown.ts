@@ -1,8 +1,11 @@
-import { createHash } from 'crypto';
+import { createHmac, randomBytes } from 'crypto';
 
 /** How long a credential the provider rejected with a 401 is skipped. */
 export const CREDENTIAL_REJECTION_COOLDOWN_MS = 5 * 60_000;
 const MAX_ENTRIES = 2_000;
+// Keyed per process so a fingerprint is useless outside this map: it cannot be
+// matched against a guessed secret or linked across replicas.
+const FINGERPRINT_KEY = randomBytes(32);
 
 /** The credential a provider call used, as routing knows it. */
 export interface RejectedCredentialRef {
@@ -71,7 +74,10 @@ export class CredentialRejectionCooldown {
 
 function cooldownKey(ref: RejectedCredentialRef): string | null {
   if (!ref.tenantId || !ref.secret) return null;
-  const fingerprint = createHash('sha256').update(ref.secret).digest('hex').slice(0, 32);
+  const fingerprint = createHmac('sha256', FINGERPRINT_KEY)
+    .update(ref.secret)
+    .digest('hex')
+    .slice(0, 32);
   return [
     ref.tenantId,
     ref.provider.toLowerCase(),
