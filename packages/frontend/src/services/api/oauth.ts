@@ -149,9 +149,14 @@ export function revokeAnthropicOAuth(agentName: string, label?: string) {
   );
 }
 
-export function getGeminiOAuthUrl(agentName: string) {
+/**
+ * `projectId` is the user's Google Cloud project, needed by Workspace and
+ * Standard-tier Google accounts. Personal accounts leave it empty.
+ */
+export function getGeminiOAuthUrl(agentName: string, options: PopupOauthOptions = {}) {
   return fetchJson<{ url: string }>(`/oauth/gemini/authorize`, {
     agentName,
+    projectId: options.projectId,
   });
 }
 
@@ -176,8 +181,13 @@ export function revokeGeminiOAuth(agentName: string, label?: string) {
  * Dispatch table for popup-OAuth providers. The detail view picks the
  * right getUrl/submitCallback/revoke triplet based on the provider id.
  */
+export interface PopupOauthOptions {
+  /** Google Cloud project id (Gemini only). */
+  projectId?: string;
+}
+
 export interface PopupOauthApi {
-  getUrl: (agentName: string) => Promise<{ url: string }>;
+  getUrl: (agentName: string, options?: PopupOauthOptions) => Promise<{ url: string }>;
   submitCallback: (code: string, state: string) => Promise<{ ok: boolean }>;
   revoke: (agentName: string, label?: string) => Promise<{ ok: boolean; notifications?: string[] }>;
 }

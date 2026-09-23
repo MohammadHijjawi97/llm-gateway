@@ -244,7 +244,7 @@ describe('OAuthDetailView', () => {
     renderView({ connected: true, activeKeys: [makeKey()], addKeyOpen: true });
 
     await waitFor(() => {
-      expect(mockGetOpenaiOAuthUrl).toHaveBeenCalledWith('test-agent');
+      expect(mockGetOpenaiOAuthUrl).toHaveBeenCalledWith('test-agent', { projectId: undefined });
     });
     expect(screen.getByPlaceholderText(/localhost:1455/)).toBeDefined();
   });
@@ -289,7 +289,7 @@ describe('OAuthDetailView', () => {
     fireEvent.click(screen.getByText('Log in with xAI'));
 
     await waitFor(() => {
-      expect(mockGetXaiOAuthUrl).toHaveBeenCalledWith('test-agent');
+      expect(mockGetXaiOAuthUrl).toHaveBeenCalledWith('test-agent', { projectId: undefined });
     });
     expect(
       screen.getByPlaceholderText('Paste the xAI authorization code or callback URL'),
@@ -420,7 +420,9 @@ describe('OAuthDetailView', () => {
     await waitFor(() => {
       expect(screen.getByText(/Copy the full URL/)).toBeDefined();
     });
-    expect(container.querySelector('video[src="/images/oauth-callback-example.mp4"]')).not.toBeNull();
+    expect(
+      container.querySelector('video[src="/images/oauth-callback-example.mp4"]'),
+    ).not.toBeNull();
   });
 
   it('sets preload="auto" on the OAuth tutorial video so it plays immediately', async () => {
@@ -606,9 +608,16 @@ describe('OAuthDetailView', () => {
     expect(mockSubmitOpenaiOAuthCallback).not.toHaveBeenCalled();
   });
 
-  it('handlePasteSubmit shows error when exchange fails', async () => {
+  it.each([
+    [
+      'the server message',
+      new Error('This Google account needs a Google Cloud project.'),
+      /needs a Google Cloud project/,
+    ],
+    ['a generic hint when the server says nothing', new Error(''), /Failed to exchange token/],
+  ])('handlePasteSubmit shows %s when exchange fails', async (_case, error, expected) => {
     mockGetOpenaiOAuthUrl.mockResolvedValue({ url: 'https://oauth.openai.com/authorize' });
-    mockSubmitOpenaiOAuthCallback.mockRejectedValue(new Error('expired'));
+    mockSubmitOpenaiOAuthCallback.mockRejectedValue(error);
     vi.spyOn(window, 'open').mockReturnValue({ closed: false } as unknown as Window);
 
     renderView();
@@ -622,8 +631,30 @@ describe('OAuthDetailView', () => {
     fireEvent.click(screen.getByText('Connect'));
 
     await waitFor(() => {
-      expect(screen.getByText(/Failed to exchange token/)).toBeDefined();
+      expect(screen.getByText(expected)).toBeDefined();
     });
+  });
+
+  it('sends the Google Cloud project id with a Gemini login', async () => {
+    mockGetOpenaiOAuthUrl.mockResolvedValue({
+      url: 'https://accounts.google.com/o/oauth2/v2/auth',
+    });
+    vi.spyOn(window, 'open').mockReturnValue({ closed: false } as unknown as Window);
+
+    renderView({ provId: 'gemini', provDef: geminiProvDef });
+    fireEvent.input(screen.getByLabelText(/Google Cloud project ID/), {
+      target: { value: '  my-project  ' },
+    });
+    fireEvent.click(screen.getByText('Log in with Gemini'));
+
+    await waitFor(() => {
+      expect(mockGetOpenaiOAuthUrl).toHaveBeenCalledWith('test-agent', { projectId: 'my-project' });
+    });
+  });
+
+  it('only asks for a Google Cloud project on Gemini', () => {
+    renderView();
+    expect(screen.queryByLabelText(/Google Cloud project ID/)).toBeNull();
   });
 
   it('handlePasteSubmit does nothing when input is empty', async () => {

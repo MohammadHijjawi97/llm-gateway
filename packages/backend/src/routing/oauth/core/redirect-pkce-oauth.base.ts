@@ -90,8 +90,17 @@ interface RedirectPkcePendingOAuth {
   /** Acting user, audit only (tenant_providers.created_by_user_id). */
   createdByUserId: string | null;
   backendUrl: string;
+  /** Provider-specific inputs from the authorize step, handed to `enrichBlob`. */
+  enrichOptions: OAuthEnrichOptions;
   expiresAt: number;
 }
+
+/**
+ * Provider-specific values the user supplies when starting a flow and the
+ * provider needs after the token exchange (e.g. Gemini's Google Cloud
+ * project id for Workspace accounts).
+ */
+export type OAuthEnrichOptions = Readonly<Record<string, string>>;
 
 /**
  * Build a base instance. NestJS subclasses pass their own config and the
@@ -142,6 +151,7 @@ export abstract class RedirectPkceOauthBaseService {
     tenantId: string,
     backendUrl?: string,
     createdByUserId?: string | null,
+    enrichOptions: OAuthEnrichOptions = {},
   ): Promise<string> {
     const state = generateState();
     const { verifier, challenge } = generatePkce();
@@ -155,6 +165,7 @@ export abstract class RedirectPkceOauthBaseService {
       tenantId,
       createdByUserId: createdByUserId ?? null,
       backendUrl: safeBackendUrl,
+      enrichOptions,
     });
     if (this.useCallbackServer) {
       await this.ensureCallbackServer();
@@ -211,7 +222,7 @@ export abstract class RedirectPkceOauthBaseService {
     // call (CodeAssist `loadCodeAssist`/`onboardUser`) immediately after
     // exchange to discover their assigned project id. The result lives in
     // `blob.u` and is preserved across refreshes by `unwrapToken`.
-    const blob = await this.enrichBlob(baseBlob);
+    const blob = await this.enrichBlob(baseBlob, pending.enrichOptions);
     const label = await this.providerService.nextOAuthLabel(
       pending.tenantId,
       this.oauthConfig.providerId,
@@ -366,10 +377,13 @@ export abstract class RedirectPkceOauthBaseService {
    * Optional hook for subclasses to enrich the OAuth blob with provider-
    * specific fields (e.g. Gemini stores the CodeAssist project id in
    * `blob.u` after a successful onboarding round-trip). The default is
-   * pass-through. Throwing here aborts the exchange; the user sees a
-   * generic "Token exchange failed" error.
+   * pass-through. Throwing here aborts the exchange, and the error's
+   * message reaches the user, so throw only messages they can act on.
    */
-  protected async enrichBlob(blob: OAuthTokenBlob): Promise<OAuthTokenBlob> {
+  protected async enrichBlob(
+    blob: OAuthTokenBlob,
+    _options: OAuthEnrichOptions,
+  ): Promise<OAuthTokenBlob> {
     return blob;
   }
 

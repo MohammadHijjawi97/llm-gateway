@@ -3,7 +3,10 @@ import { ConfigService } from '@nestjs/config';
 import { ProviderService } from '../../routing-core/provider.service';
 import { ModelDiscoveryService } from '../../../model-discovery/model-discovery.service';
 import { OAuthTokenBlob } from '../core';
-import { RedirectPkceOauthBaseService } from '../core/redirect-pkce-oauth.base';
+import {
+  RedirectPkceOauthBaseService,
+  type OAuthEnrichOptions,
+} from '../core/redirect-pkce-oauth.base';
 import { CodeAssistClientService } from './codeassist-client.service';
 
 // Default OAuth client borrowed from the open-source `gemini-cli` (Google's
@@ -60,10 +63,14 @@ export class GeminiOauthService extends RedirectPkceOauthBaseService {
    * After the Google OAuth token exchange, run the CodeAssist onboarding
    * round-trip so we have the user's `cloudaicompanionProject` id. The id
    * lives in `blob.u` and is sent on every chat request. Idempotent: a
-   * re-sign-in just returns the same project.
+   * re-sign-in just returns the same project. Workspace and Standard-tier
+   * accounts need the Google Cloud project the user entered (`projectId`).
    */
-  protected async enrichBlob(blob: OAuthTokenBlob): Promise<OAuthTokenBlob> {
-    const { projectId } = await this.codeAssist.onboard(blob.t);
+  protected async enrichBlob(
+    blob: OAuthTokenBlob,
+    options: OAuthEnrichOptions,
+  ): Promise<OAuthTokenBlob> {
+    const { projectId } = await this.codeAssist.onboard(blob.t, options.projectId);
     return { ...blob, u: projectId };
   }
 }

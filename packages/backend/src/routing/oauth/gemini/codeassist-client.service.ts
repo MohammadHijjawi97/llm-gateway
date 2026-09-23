@@ -14,6 +14,10 @@
  *      `:loadCodeAssist` to discover the user's tier + assigned project,
  *      then `:onboardUser` if they don't have one yet. The resulting
  *      project id is persisted in the OAuth token blob's `u` field.
+ *      Personal free-tier accounts get a Google-managed project; Workspace
+ *      and Standard-tier accounts must bring their own Google Cloud project,
+ *      exactly like `gemini-cli`'s `GOOGLE_CLOUD_PROJECT`
+ *      (packages/core/src/code_assist/setup.ts).
  *   2. **Envelope wrap/unwrap** — every chat request must be wrapped as
  *      `{ model, project, request: <standard-Gemini-payload> }`; responses
  *      come back as `{ response: <standard-Gemini-payload>, ... }`.
@@ -26,6 +30,8 @@ const CODE_ASSIST_BASE = 'https://cloudcode-pa.googleapis.com';
 const CODE_ASSIST_VERSION = 'v1internal';
 const CODE_ASSIST_OPERATION_POLL_MS = 5_000;
 const CODE_ASSIST_OPERATION_MAX_POLLS = 12;
+const FREE_TIER_ID = 'free-tier';
+const STANDARD_TIER_ID = 'standard-tier';
 
 const CLIENT_METADATA = {
   ideType: 'IDE_UNSPECIFIED',
@@ -45,6 +51,15 @@ interface LoadCodeAssistResponse {
   currentTier?: { id?: string };
   cloudaicompanionProject?: string;
   allowedTiers?: { id: string; isDefault?: boolean }[];
+  ineligibleTiers?: { reasonMessage?: string }[];
+}
+
+/**
+ * A Google account setup problem the user can act on (missing or invalid
+ * Google Cloud project, ineligible account). Its message is shown as-is.
+ */
+export class CodeAssistSetupError extends Error {
+  override readonly name = 'CodeAssistSetupError';
 }
 
 interface LongRunningOperation {
@@ -60,31 +75,45 @@ export class CodeAssistClientService {
   /**
    * One-time-per-user setup. Returns the project id that must be sent on
    * every chat request thereafter. Idempotent — safe to call repeatedly.
+   *
+   * @param userProjectId The user's own Google Cloud project id. Required for
+   *   Workspace and Standard-tier accounts; ignored by the free tier, which
+   *   uses a Google-managed project.
    */
-  async onboard(accessToken: string): Promise<OnboardResult> {
-    const loaded = await this.callJson<LoadCodeAssistResponse>(':loadCodeAssist', accessToken, {
-      metadata: CLIENT_METADATA,
-    });
-    const existingProject = loaded.cloudaicompanionProject;
-    const currentTierId = loaded.currentTier?.id;
-    if (existingProject && currentTierId) {
-      return { projectId: existingProject, tierId: currentTierId };
+  async onboard(accessToken: string, userProjectId?: string): Promise<OnboardResult> {
+    if (userProjectId && /^\d+$/.test(userProjectId)) {
+      throw new CodeAssistSetupError(
+        `"${userProjectId}" is a Google Cloud project number. Enter the project ID instead (for example my-project-123).`,
+      );
     }
+    const loaded = await this.callJson<LoadCodeAssistResponse>(':loadCodeAssist', accessToken, {
+      cloudaicompanionProject: userProjectId,
+      metadata: projectMetadata(userProjectId),
+    });
+
+    // Already onboarded: Google assigned a project, or the account's tier
+    // expects the user's own.
+    if (loaded.currentTier) {
+      const projectId = loaded.cloudaicompanionProject ?? userProjectId;
+      if (!projectId) throw projectRequiredError(loaded);
+      return { projectId, tierId: loaded.currentTier.id ?? STANDARD_TIER_ID };
+    }
+
     // No project yet — pick the default-allowed tier and onboard. For
     // personal accounts this is `free-tier`.
     const tier = loaded.allowedTiers?.find((t) => t.isDefault) ?? loaded.allowedTiers?.[0];
-    if (!tier) {
-      throw new Error('CodeAssist returned no allowed tiers — onboarding cannot proceed.');
-    }
+    if (!tier) throw projectRequiredError(loaded);
+    // The free tier uses a Google-managed project; sending one makes
+    // `onboardUser` fail with Precondition Failed.
+    const onboardProjectId = tier.id === FREE_TIER_ID ? undefined : userProjectId;
     const lro = await this.callJson<LongRunningOperation>(':onboardUser', accessToken, {
       tierId: tier.id,
-      metadata: CLIENT_METADATA,
+      cloudaicompanionProject: onboardProjectId,
+      metadata: projectMetadata(onboardProjectId),
     });
     const completed = await this.waitForOperation(lro, accessToken);
-    const projectId = completed.response?.cloudaicompanionProject?.id;
-    if (!projectId) {
-      throw new Error('CodeAssist onboardUser returned no project id.');
-    }
+    const projectId = completed.response?.cloudaicompanionProject?.id ?? userProjectId;
+    if (!projectId) throw projectRequiredError(loaded);
     return { projectId, tierId: tier.id };
   }
 
@@ -146,4 +175,21 @@ export class CodeAssistClientService {
     }
     return (await response.json()) as LongRunningOperation;
   }
+}
+
+function projectMetadata(projectId: string | undefined): Record<string, string> {
+  return projectId ? { ...CLIENT_METADATA, duetProject: projectId } : { ...CLIENT_METADATA };
+}
+
+/** Google's own ineligibility reasons when it gives any, else the project hint. */
+function projectRequiredError(loaded: LoadCodeAssistResponse): CodeAssistSetupError {
+  const reasons = (loaded.ineligibleTiers ?? [])
+    .map((tier) => tier.reasonMessage)
+    .filter((reason): reason is string => !!reason);
+  if (reasons.length > 0) {
+    return new CodeAssistSetupError(`This Google account cannot use Gemini: ${reasons.join(' ')}`);
+  }
+  return new CodeAssistSetupError(
+    'This Google account needs a Google Cloud project (Workspace and Standard-tier accounts do). Enter your project ID and log in again.',
+  );
 }

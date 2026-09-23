@@ -195,7 +195,7 @@ describe('GeminiOauthService', () => {
       const state = new URL(url).searchParams.get('state')!;
       await svc.exchangeCode(state, 'auth-code');
 
-      expect(codeAssist.onboard).toHaveBeenCalledWith('access-1');
+      expect(codeAssist.onboard).toHaveBeenCalledWith('access-1', undefined);
       expect(providerService.upsertProvider).toHaveBeenCalledWith(
         'agent-1',
         'user-1',
@@ -207,6 +207,20 @@ describe('GeminiOauthService', () => {
         null,
       );
       expect(providerService.nextOAuthLabel).toHaveBeenCalledWith('user-1', 'gemini');
+    });
+
+    it('hands the Google Cloud project from the authorize step to onboarding', async () => {
+      fetchMock.mockResolvedValue(
+        mockResponse(200, { access_token: 'access-1', refresh_token: 'r', expires_in: 3600 }),
+      );
+      codeAssist.onboard.mockResolvedValue({ projectId: 'my-project', tierId: 'standard-tier' });
+
+      const url = await svc.generateAuthorizationUrl('agent-1', 'user-1', undefined, null, {
+        projectId: 'my-project',
+      });
+      await svc.exchangeCode(new URL(url).searchParams.get('state')!, 'auth-code');
+
+      expect(codeAssist.onboard).toHaveBeenCalledWith('access-1', 'my-project');
     });
 
     it('stores providerId as gemini and authType as subscription', async () => {

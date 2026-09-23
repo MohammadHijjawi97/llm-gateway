@@ -38,17 +38,21 @@ export class GeminiOauthController {
    * Generates a Google OAuth authorize URL with PKCE challenge. The frontend
    * opens this URL in a popup; a temporary callback server on port 1455
    * handles the redirect (dev) or the popup falls through to the manual
-   * `/callback` POST (prod).
+   * `/callback` POST (prod). `projectId` is the user's Google Cloud project,
+   * needed by Workspace and Standard-tier accounts during CodeAssist
+   * onboarding.
    */
   @Get('authorize')
   async authorize(
     @Query('agentName') agentName: string,
+    @Query('projectId') projectId: string | string[] | undefined,
     @TenantCtx() ctx: TenantContext,
     @Req() req: Request,
   ) {
     if (!agentName) {
       throw new HttpException('agentName query parameter is required', HttpStatus.BAD_REQUEST);
     }
+    const googleProjectId = optionalTrimmedStringQuery(projectId, 'projectId');
     const agent = await this.resolveAgent.resolve(ctx.tenantId, agentName);
     // Prefer the operator-configured BETTER_AUTH_URL so a forged Host header
     // cannot redirect the OAuth flow.
@@ -60,6 +64,7 @@ export class GeminiOauthController {
         agent.tenant_id,
         backendUrl,
         ctx.userId,
+        googleProjectId ? { projectId: googleProjectId } : {},
       );
       return { url };
     } catch (err) {

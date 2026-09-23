@@ -772,7 +772,7 @@ describe('ProviderSelectModal', () => {
       fireEvent.click(screen.getByText('Log in with OpenAI'));
 
       await waitFor(() => {
-        expect(mockGetOpenaiOAuthUrl).toHaveBeenCalledWith('test-agent');
+        expect(mockGetOpenaiOAuthUrl).toHaveBeenCalledWith('test-agent', { projectId: undefined });
       });
       expect(window.open).toHaveBeenCalledWith(
         'https://auth.openai.com/oauth/authorize?test=1',

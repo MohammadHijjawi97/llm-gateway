@@ -1,4 +1,4 @@
-import { CodeAssistClientService } from './codeassist-client.service';
+import { CodeAssistClientService, CodeAssistSetupError } from './codeassist-client.service';
 
 const originalFetch = global.fetch;
 
@@ -133,17 +133,13 @@ describe('CodeAssistClientService', () => {
     it('throws when allowedTiers is empty', async () => {
       fetchMock.mockResolvedValue(mockOkResponse({ allowedTiers: [] }));
 
-      await expect(svc.onboard('access-token')).rejects.toThrow(
-        'CodeAssist returned no allowed tiers',
-      );
+      await expect(svc.onboard('access-token')).rejects.toThrow('needs a Google Cloud project');
     });
 
     it('throws when allowedTiers is missing', async () => {
       fetchMock.mockResolvedValue(mockOkResponse({}));
 
-      await expect(svc.onboard('access-token')).rejects.toThrow(
-        'CodeAssist returned no allowed tiers',
-      );
+      await expect(svc.onboard('access-token')).rejects.toThrow('needs a Google Cloud project');
     });
 
     it('throws when onboardUser returns no project id', async () => {
@@ -153,9 +149,95 @@ describe('CodeAssistClientService', () => {
         )
         .mockResolvedValueOnce(mockOkResponse({ done: true, response: {} }));
 
-      await expect(svc.onboard('access-token')).rejects.toThrow(
-        'CodeAssist onboardUser returned no project id.',
-      );
+      await expect(svc.onboard('access-token')).rejects.toThrow('needs a Google Cloud project');
+    });
+
+    describe('Workspace and Standard-tier accounts (#2842)', () => {
+      const bodyOf = (call: number) =>
+        JSON.parse((fetchMock.mock.calls[call][1] as RequestInit).body as string);
+
+      it('rejects a numeric project number before calling Google', async () => {
+        await expect(svc.onboard('access-token', '123456789')).rejects.toBeInstanceOf(
+          CodeAssistSetupError,
+        );
+        expect(fetchMock).not.toHaveBeenCalled();
+      });
+
+      it('uses the user project when the account has a tier but no assigned project', async () => {
+        fetchMock.mockResolvedValue(mockOkResponse({ currentTier: {} }));
+
+        const result = await svc.onboard('access-token', 'my-project');
+
+        expect(result).toEqual({ projectId: 'my-project', tierId: 'standard-tier' });
+        expect(fetchMock).toHaveBeenCalledTimes(1);
+        expect(bodyOf(0)).toMatchObject({
+          cloudaicompanionProject: 'my-project',
+          metadata: { duetProject: 'my-project' },
+        });
+      });
+
+      it('asks for a project when the account has a tier but none is available', async () => {
+        fetchMock.mockResolvedValue(mockOkResponse({ currentTier: { id: 'standard-tier' } }));
+
+        await expect(svc.onboard('access-token')).rejects.toThrow(
+          new CodeAssistSetupError(
+            'This Google account needs a Google Cloud project (Workspace and Standard-tier accounts do). Enter your project ID and log in again.',
+          ),
+        );
+      });
+
+      it('onboards a non-free tier with the user project and keeps it when Google returns none', async () => {
+        fetchMock
+          .mockResolvedValueOnce(
+            mockOkResponse({ allowedTiers: [{ id: 'standard-tier', isDefault: true }] }),
+          )
+          .mockResolvedValueOnce(mockOkResponse({ done: true, response: {} }));
+
+        const result = await svc.onboard('access-token', 'my-project');
+
+        expect(result).toEqual({ projectId: 'my-project', tierId: 'standard-tier' });
+        expect(bodyOf(1)).toMatchObject({
+          tierId: 'standard-tier',
+          cloudaicompanionProject: 'my-project',
+          metadata: { duetProject: 'my-project' },
+        });
+      });
+
+      it('never sends the user project when onboarding the free tier', async () => {
+        fetchMock
+          .mockResolvedValueOnce(
+            mockOkResponse({ allowedTiers: [{ id: 'free-tier', isDefault: true }] }),
+          )
+          .mockResolvedValueOnce(
+            mockOkResponse({
+              done: true,
+              response: { cloudaicompanionProject: { id: 'managed' } },
+            }),
+          );
+
+        const result = await svc.onboard('access-token', 'my-project');
+
+        expect(result.projectId).toBe('managed');
+        expect(bodyOf(1).cloudaicompanionProject).toBeUndefined();
+        expect(bodyOf(1).metadata.duetProject).toBeUndefined();
+      });
+
+      it("surfaces Google's ineligibility reasons", async () => {
+        fetchMock.mockResolvedValue(
+          mockOkResponse({
+            allowedTiers: [],
+            ineligibleTiers: [
+              { reasonMessage: 'Your organization disabled Gemini.' },
+              { reasonMessage: '' },
+              {},
+            ],
+          }),
+        );
+
+        await expect(svc.onboard('access-token')).rejects.toThrow(
+          'This Google account cannot use Gemini: Your organization disabled Gemini.',
+        );
+      });
     });
 
     it('throws with the method name when loadCodeAssist returns non-OK', async () => {

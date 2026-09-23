@@ -60,6 +60,7 @@ describe('GeminiOauthController', () => {
 
       const result = await controller.authorize(
         'my-agent',
+        undefined,
         { tenantId: 'tenant-1', userId: 'user-1' } as never,
         req,
       );
@@ -70,6 +71,7 @@ describe('GeminiOauthController', () => {
         'tenant-1',
         'http://localhost:3001',
         'user-1',
+        {},
       );
       expect(result).toEqual({ url: 'https://accounts.google.com/o/oauth2/v2/auth?...' });
     });
@@ -83,6 +85,7 @@ describe('GeminiOauthController', () => {
       await expect(
         controller.authorize(
           undefined as unknown as string,
+          undefined,
           { tenantId: 'tenant-1', userId: 'user-1' } as never,
           req,
         ),
@@ -96,7 +99,12 @@ describe('GeminiOauthController', () => {
       } as unknown as Request;
 
       await expect(
-        controller.authorize('', { tenantId: 'tenant-1', userId: 'user-1' } as never, req),
+        controller.authorize(
+          '',
+          undefined,
+          { tenantId: 'tenant-1', userId: 'user-1' } as never,
+          req,
+        ),
       ).rejects.toThrow(HttpException);
     });
 
@@ -112,7 +120,12 @@ describe('GeminiOauthController', () => {
       } as unknown as Request;
 
       await expect(
-        controller.authorize('my-agent', { tenantId: 'tenant-1', userId: 'user-1' } as never, req),
+        controller.authorize(
+          'my-agent',
+          undefined,
+          { tenantId: 'tenant-1', userId: 'user-1' } as never,
+          req,
+        ),
       ).rejects.toThrow(HttpException);
     });
 
@@ -126,7 +139,12 @@ describe('GeminiOauthController', () => {
       } as unknown as Request;
 
       await expect(
-        controller.authorize('my-agent', { tenantId: 'tenant-1', userId: 'user-1' } as never, req),
+        controller.authorize(
+          'my-agent',
+          undefined,
+          { tenantId: 'tenant-1', userId: 'user-1' } as never,
+          req,
+        ),
       ).rejects.toThrow('Failed to start OAuth callback server');
     });
 
@@ -144,6 +162,7 @@ describe('GeminiOauthController', () => {
 
       await controller.authorize(
         'my-agent',
+        undefined,
         { tenantId: 'tenant-1', userId: 'user-1' } as never,
         req,
       );
@@ -153,7 +172,43 @@ describe('GeminiOauthController', () => {
         'tenant-1',
         'https://manifest.example.com',
         'user-1',
+        {},
       );
+    });
+
+    it('passes a trimmed Google Cloud project id to the OAuth flow', async () => {
+      resolveAgent.resolve.mockResolvedValue({ id: 'agent-id-1', tenant_id: 'tenant-1' } as never);
+      oauthService.generateAuthorizationUrl.mockResolvedValue('https://accounts.google.com/...');
+      configService.get.mockReturnValue('https://manifest.example.com');
+      const req = { protocol: 'http', get: jest.fn() } as unknown as Request;
+
+      await controller.authorize(
+        'my-agent',
+        '  my-project  ',
+        { tenantId: 'tenant-1', userId: 'user-1' } as never,
+        req,
+      );
+
+      expect(oauthService.generateAuthorizationUrl).toHaveBeenCalledWith(
+        'agent-id-1',
+        'tenant-1',
+        'https://manifest.example.com',
+        'user-1',
+        { projectId: 'my-project' },
+      );
+    });
+
+    it('rejects a repeated projectId query parameter', async () => {
+      const req = { protocol: 'http', get: jest.fn() } as unknown as Request;
+
+      await expect(
+        controller.authorize(
+          'my-agent',
+          ['a', 'b'],
+          { tenantId: 'tenant-1', userId: 'user-1' } as never,
+          req,
+        ),
+      ).rejects.toThrow('projectId query parameter must be a string');
     });
   });
 
