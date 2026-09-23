@@ -2602,8 +2602,10 @@ describe('ProxyFallbackService', () => {
         expect(result.failures).toHaveLength(1);
         expect(result.failures[0]).toMatchObject({ provider: 'anthropic', status: 502 });
         expect(result.failures[0].attempt).toBe(attempts[0]);
-        // The stalled attempt ends when warm-up gives up on it.
-        expect(attempts[0].completedAtMs).toEqual(expect.any(Number));
+        // forwardToProvider stamps completedAtMs when headers arrive. The
+        // warm-up restamps it when it gives up, after the 50ms window, so the
+        // attempt's duration covers the time spent waiting for a first byte.
+        expect(attempts[0].completedAtMs! - attempts[0].startedAtMs).toBeGreaterThanOrEqual(40);
       });
 
       it('keeps a healthy fallback stream intact', async () => {
