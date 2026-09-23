@@ -429,7 +429,7 @@ describe('ProxyFallbackService', () => {
         authType: 'subscription',
         ...overrides,
       });
-      const apiKeyRoute = (overrides: Record<string, unknown> = {}) => ({
+      const byokRoute = (overrides: Record<string, unknown> = {}) => ({
         provider: 'anthropic',
         apiKey: 'sk-revoked',
         tenantId: 'tenant-1',
@@ -443,9 +443,9 @@ describe('ProxyFallbackService', () => {
 
       it('skips an API key the provider rejected, without calling the provider again', async () => {
         providerClient.forward.mockResolvedValueOnce(unauthorized());
-        await service.tryForwardToProvider(apiKeyRoute());
+        await service.tryForwardToProvider(byokRoute());
 
-        const skipped = await service.tryForwardToProvider(apiKeyRoute());
+        const skipped = await service.tryForwardToProvider(byokRoute());
 
         expect(providerClient.forward).toHaveBeenCalledTimes(1);
         expect(skipped.response.status).toBe(401);
@@ -460,9 +460,9 @@ describe('ProxyFallbackService', () => {
 
       it('tries a replaced API key at once', async () => {
         providerClient.forward.mockResolvedValueOnce(unauthorized()).mockResolvedValueOnce(ok());
-        await service.tryForwardToProvider(apiKeyRoute());
+        await service.tryForwardToProvider(byokRoute());
 
-        const result = await service.tryForwardToProvider(apiKeyRoute({ apiKey: 'sk-new' }));
+        const result = await service.tryForwardToProvider(byokRoute({ apiKey: 'sk-new' }));
 
         expect(providerClient.forward).toHaveBeenCalledTimes(2);
         expect(result.response.status).toBe(200);
