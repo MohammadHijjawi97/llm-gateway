@@ -153,8 +153,12 @@ async function refreshOnce<T extends RefreshableBlob>(
       if (fresh) current = fresh;
     }
 
-    // Already valid — either it never really expired, or someone just refreshed.
-    if (Date.now() < current.e - REFRESH_EXPIRY_SKEW_MS) return current;
+    // Someone else already refreshed: the DB holds a different, valid token.
+    // When the DB still holds the caller's own token, the caller's verdict
+    // wins over the stored expiry: callers only get here once they consider
+    // it expired, which includes a provider rejecting it early with a 401.
+    const refreshedElsewhere = current.t !== params.callerBlob.t;
+    if (refreshedElsewhere && Date.now() < current.e - REFRESH_EXPIRY_SKEW_MS) return current;
 
     const refreshed = await params.refresh(current);
     await persistWithRetry(params, ops.persist, refreshed);

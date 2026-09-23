@@ -95,6 +95,24 @@ describe('coordinateOAuthRefresh', () => {
     expect(persist).not.toHaveBeenCalled();
   });
 
+  it('refreshes a token the provider rejected even though the DB copy has not expired yet', async () => {
+    // A 401 makes the caller treat its token as expired (e: 0), while the DB
+    // still holds that same token with a future expiry.
+    const dbBlob = valid('rejected');
+    const refreshed = valid('brand-new');
+    const { params, refresh, persist } = makeParams({
+      callerBlob: { ...dbBlob, e: 0 },
+      readFreshRaw: jest.fn().mockResolvedValue(JSON.stringify(dbBlob)),
+      refresh: jest.fn().mockResolvedValue(refreshed),
+    });
+
+    const result = await coordinateOAuthRefresh(params);
+
+    expect(result).toBe(refreshed);
+    expect(refresh).toHaveBeenCalledWith(dbBlob);
+    expect(persist).toHaveBeenCalledWith(refreshed);
+  });
+
   it('refreshes using the fresher DB refresh token when the DB copy is also expired', async () => {
     const dbBlob: TestBlob = { t: 'db', e: Date.now() - 500, r: 'refresh-from-db' };
     const refreshed = valid('rotated');

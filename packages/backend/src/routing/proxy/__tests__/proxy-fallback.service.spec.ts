@@ -1,3 +1,4 @@
+import { Logger } from '@nestjs/common';
 import { Repository } from 'typeorm';
 import { ProxyFallbackService, normalizeProviderModel } from '../proxy-fallback.service';
 import { resolveApiKey } from '../oauth-credentials';
@@ -399,6 +400,135 @@ describe('ProxyFallbackService', () => {
         expect(unwrap().mock.calls[0][3]).toBe('Work');
       },
     );
+
+    describe('stale credentials (401)', () => {
+      const unauthorized = () => ({
+        response: new Response('unauthorized', { status: 401 }),
+        isGoogle: false,
+        isAnthropic: false,
+        isChatGpt: true,
+      });
+      const ok = () => ({
+        response: new Response('{}', { status: 200 }),
+        isGoogle: false,
+        isAnthropic: false,
+        isChatGpt: true,
+      });
+      const oauthBlob = JSON.stringify({ t: 'old-access', r: 'refresh', e: Date.now() + 600_000 });
+      const subscription = (overrides: Record<string, unknown> = {}) => ({
+        provider: 'openai',
+        apiKey: 'old-access',
+        rawApiKey: oauthBlob,
+        agentId: 'agent-1',
+        tenantId: 'tenant-1',
+        providerKeyLabel: 'Work',
+        model: 'gpt-5.3-codex',
+        body,
+        stream: false,
+        sessionKey: 'sess-1',
+        authType: 'subscription',
+        ...overrides,
+      });
+      const apiKey = (overrides: Record<string, unknown> = {}) => ({
+        provider: 'anthropic',
+        apiKey: 'sk-revoked',
+        tenantId: 'tenant-1',
+        model: 'claude-sonnet-4',
+        body,
+        stream: false,
+        sessionKey: 'sess-1',
+        authType: 'api_key',
+        ...overrides,
+      });
+
+      it('skips an API key the provider rejected, without calling the provider again', async () => {
+        providerClient.forward.mockResolvedValueOnce(unauthorized());
+        await service.tryForwardToProvider(apiKey());
+
+        const skipped = await service.tryForwardToProvider(apiKey());
+
+        expect(providerClient.forward).toHaveBeenCalledTimes(1);
+        expect(skipped.response.status).toBe(401);
+        expect(skipped.providerCallStarted).toBe(false);
+        await expect(skipped.response.json()).resolves.toEqual({
+          error: {
+            message:
+              'anthropic rejected the credential with a 401 and it is skipped for now. Reconnect or replace it if this continues.',
+          },
+        });
+      });
+
+      it('tries a replaced API key at once', async () => {
+        providerClient.forward.mockResolvedValueOnce(unauthorized()).mockResolvedValueOnce(ok());
+        await service.tryForwardToProvider(apiKey());
+
+        const result = await service.tryForwardToProvider(apiKey({ apiKey: 'sk-new' }));
+
+        expect(providerClient.forward).toHaveBeenCalledTimes(2);
+        expect(result.response.status).toBe(200);
+      });
+
+      it('skips a subscription whose token could not be refreshed, and logs why', async () => {
+        const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+        providerClient.forward.mockResolvedValueOnce(unauthorized());
+        await service.tryForwardToProvider(subscription());
+
+        const skipped = await service.tryForwardToProvider(subscription());
+
+        expect(providerClient.forward).toHaveBeenCalledTimes(1);
+        expect(skipped.response.status).toBe(401);
+        await expect(skipped.response.json()).resolves.toEqual({
+          error: {
+            message:
+              'openai rejected the "Work" credential with a 401 and it is skipped for now. Reconnect or replace it if this continues.',
+          },
+        });
+        expect(warn).toHaveBeenCalledWith(
+          expect.stringContaining(
+            'OAuth token rejected upstream and could not be refreshed: provider=openai keyLabel=Work',
+          ),
+        );
+        warn.mockRestore();
+      });
+
+      it('names the default connection in the log when the key has no label', async () => {
+        const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+        providerClient.forward.mockResolvedValueOnce(unauthorized());
+
+        await service.tryForwardToProvider(subscription({ providerKeyLabel: undefined }));
+
+        expect(warn).toHaveBeenCalledWith(expect.stringContaining('keyLabel=default'));
+        warn.mockRestore();
+      });
+
+      it('skips the refreshed token when the account still refuses it', async () => {
+        openaiOauth.unwrapToken.mockResolvedValue('new-access');
+        providerClient.forward
+          .mockResolvedValueOnce(unauthorized())
+          .mockResolvedValueOnce(unauthorized());
+        await service.tryForwardToProvider(subscription());
+
+        // The next request sends the refreshed token the DB now holds.
+        const skipped = await service.tryForwardToProvider(subscription({ apiKey: 'new-access' }));
+
+        expect(providerClient.forward).toHaveBeenCalledTimes(2);
+        expect(skipped.providerCallStarted).toBe(false);
+      });
+
+      it('does not skip a subscription that recovered through a refresh', async () => {
+        openaiOauth.unwrapToken.mockResolvedValue('new-access');
+        providerClient.forward
+          .mockResolvedValueOnce(unauthorized())
+          .mockResolvedValueOnce(ok())
+          .mockResolvedValueOnce(ok());
+        await service.tryForwardToProvider(subscription());
+
+        const result = await service.tryForwardToProvider(subscription({ apiKey: 'new-access' }));
+
+        expect(result.response.status).toBe(200);
+        expect(providerClient.forward).toHaveBeenCalledTimes(3);
+      });
+    });
 
     it('does not refresh non-OAuth subscription strings after an upstream 401', async () => {
       providerClient.forward.mockResolvedValueOnce({

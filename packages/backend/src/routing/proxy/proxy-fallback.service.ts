@@ -95,6 +95,7 @@ import {
   type RouteCredentialDeps,
 } from './route-credentials';
 import { recordingResponseFromText } from './attempt-recording-capture';
+import { CredentialRejectionCooldown } from './credential-rejection-cooldown';
 
 // Fallback cooldown applied when an upstream 429 carries no usable Retry-After.
 // Kept short (15s) on purpose: many providers rate-limit on brief RPM/burst
@@ -145,6 +146,7 @@ export interface FailedFallback {
 export class ProxyFallbackService {
   private readonly logger = new Logger(ProxyFallbackService.name);
   private readonly rateLimitCooldowns = new Map<string, number>();
+  private readonly credentialRejections = new CredentialRejectionCooldown();
 
   constructor(
     private readonly providerKeyService: ProviderKeyService,
@@ -539,11 +541,25 @@ export class ProxyFallbackService {
     if (cooldown) {
       return this.buildRateLimitCooldownForward(opts, cooldown);
     }
+    const rejectedUntil = this.credentialRejections.rejectedUntil(
+      this.credentialRef(opts, opts.apiKey),
+    );
+    if (rejectedUntil) {
+      return this.buildCredentialRejectedForward(opts, rejectedUntil);
+    }
 
     try {
       const forward = await this.forwardToProvider(opts);
-      const result = await this.retryOAuthSubscriptionAfterRejectedToken(opts, forward);
+      const { forward: result, apiKey } = await this.retryOAuthSubscriptionAfterRejectedToken(
+        opts,
+        forward,
+      );
       this.recordRateLimitCooldown(opts, result.response);
+      // Still 401 after any OAuth refresh: the credential is stale (refresh
+      // rejected, or the account itself is refused). Skip it until it changes.
+      if (result.response.status === 401) {
+        this.credentialRejections.reject(this.credentialRef(opts, apiKey));
+      }
       return await this.bufferNonStreamBody(result, opts);
     } catch (error) {
       if (opts.signal?.aborted) throw error;
@@ -696,6 +712,33 @@ export class ProxyFallbackService {
     opts: ForwardProviderOptions,
     expiresAt: number,
   ): ForwardResult {
+    const message =
+      `Provider route temporarily cooling down after an upstream 429: ` +
+      `${opts.provider}/${opts.model}`;
+    return this.buildLocalSkipForward(opts, 429, message, expiresAt);
+  }
+
+  private buildCredentialRejectedForward(
+    opts: ForwardProviderOptions,
+    expiresAt: number,
+  ): ForwardResult {
+    const credential = opts.providerKeyLabel ? `"${opts.providerKeyLabel}" ` : '';
+    const message =
+      `${opts.provider} rejected the ${credential}credential with a 401 and it is skipped ` +
+      `for now. Reconnect or replace it if this continues.`;
+    return this.buildLocalSkipForward(opts, 401, message, expiresAt);
+  }
+
+  /**
+   * A route skipped locally, without calling the provider. The status keeps
+   * the fallback chain moving; the attempt is not persisted as a provider call.
+   */
+  private buildLocalSkipForward(
+    opts: ForwardProviderOptions,
+    status: number,
+    message: string,
+    expiresAt: number,
+  ): ForwardResult {
     const attempt = opts.startProviderAttempt?.({
       provider: opts.provider,
       model: opts.model,
@@ -706,12 +749,9 @@ export class ProxyFallbackService {
     });
     if (attempt) attempt.completedAtMs = Date.now();
     const retryAfterSeconds = Math.max(1, Math.ceil((expiresAt - Date.now()) / 1000));
-    const message =
-      `Provider route temporarily cooling down after an upstream 429: ` +
-      `${opts.provider}/${opts.model}`;
     return {
       response: new Response(JSON.stringify({ error: { message } }), {
-        status: 429,
+        status,
         headers: {
           'content-type': 'application/json',
           'retry-after': String(retryAfterSeconds),
@@ -722,6 +762,16 @@ export class ProxyFallbackService {
       isChatGpt: false,
       providerCallStarted: false,
       attempt,
+    };
+  }
+
+  private credentialRef(opts: ForwardProviderOptions, secret: string) {
+    return {
+      tenantId: opts.tenantId,
+      provider: opts.provider,
+      authType: opts.authType,
+      keyLabel: opts.providerKeyLabel,
+      secret,
     };
   }
 
@@ -792,10 +842,16 @@ export class ProxyFallbackService {
     ].join('\u0000');
   }
 
+  /**
+   * Refresh an OAuth token the provider rejected with a 401 and resend once.
+   * Returns the secret the final attempt used, so a still-rejected credential
+   * is remembered under the token the next request will actually send.
+   */
   private async retryOAuthSubscriptionAfterRejectedToken(
     opts: ForwardProviderOptions,
     forward: ForwardResult,
-  ): Promise<ForwardResult> {
+  ): Promise<{ forward: ForwardResult; apiKey: string }> {
+    const unchanged = { forward, apiKey: opts.apiKey };
     if (
       opts.authType !== 'subscription' ||
       forward.response.status !== 401 ||
@@ -803,7 +859,7 @@ export class ProxyFallbackService {
       !opts.agentId ||
       !opts.tenantId
     ) {
-      return forward;
+      return unchanged;
     }
 
     const refreshed = await refreshRejectedOAuthCredential(
@@ -821,7 +877,13 @@ export class ProxyFallbackService {
         xaiOauth: this.xaiOauth,
       },
     );
-    if (!refreshed?.apiKey || refreshed.apiKey === opts.apiKey) return forward;
+    if (!refreshed?.apiKey || refreshed.apiKey === opts.apiKey) {
+      this.logger.warn(
+        `OAuth token rejected upstream and could not be refreshed: provider=${opts.provider} ` +
+          `keyLabel=${opts.providerKeyLabel ?? 'default'} agent=${opts.agentId}`,
+      );
+      return unchanged;
+    }
 
     this.logger.log(
       `OAuth token rejected upstream; refreshed provider=${opts.provider} agent=${opts.agentId}`,
@@ -842,16 +904,19 @@ export class ProxyFallbackService {
       resourceUrl: refreshed.resourceUrl ?? opts.resourceUrl,
     };
     try {
-      return await this.forwardToProvider(retryOpts);
+      return { forward: await this.forwardToProvider(retryOpts), apiKey: refreshed.apiKey };
     } catch (error) {
       if (opts.signal?.aborted || !isTransportError(error)) throw error;
       return {
-        response: buildTransportErrorResponse(error),
-        attempt: attemptFromError(error),
-        providerCallStarted: true,
-        isGoogle: false,
-        isAnthropic: false,
-        isChatGpt: false,
+        forward: {
+          response: buildTransportErrorResponse(error),
+          attempt: attemptFromError(error),
+          providerCallStarted: true,
+          isGoogle: false,
+          isAnthropic: false,
+          isChatGpt: false,
+        },
+        apiKey: refreshed.apiKey,
       };
     }
   }
