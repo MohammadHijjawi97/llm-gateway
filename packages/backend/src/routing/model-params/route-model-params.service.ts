@@ -49,7 +49,7 @@ interface ResolvedRoute {
   tierName: string;
   scope: string;
   route: ModelRoute;
-  /** The id the proxy forwards and looks params up under (see normalizeProviderModel). */
+  /** The id the proxy forwards; specs are catalogued under it (see normalizeProviderModel). */
   paramsModel: string;
   models: string[];
 }
@@ -93,7 +93,7 @@ export class RouteModelParamsService {
     }
 
     const resolved = await this.resolve(agentId, tier ?? DEFAULT_TIER_NAME, model);
-    const { route, scope, paramsModel } = resolved;
+    const { route, scope } = resolved;
     const specs = await this.specsFor(resolved);
     const saved = (await this.savedParams(agentId, resolved)) ?? {};
 
@@ -111,7 +111,7 @@ export class RouteModelParamsService {
     for (const [path, value] of setEntries) next = setProviderParamValue(next, path, value);
 
     if (Object.keys(next).length === 0) {
-      await this.modelParams.delete(agentId, scope, route.provider, route.authType, paramsModel);
+      await this.modelParams.delete(agentId, scope, route.provider, route.authType, route.model);
     } else {
       const sanitized = sanitizeModelParams(route.provider, next, specs);
       for (const [path] of setEntries) {
@@ -126,7 +126,7 @@ export class RouteModelParamsService {
         scope,
         route.provider,
         route.authType,
-        paramsModel,
+        route.model,
         sanitized,
       );
     }
@@ -196,8 +196,9 @@ export class RouteModelParamsService {
     return this.specs.getSpecs(route.provider, route.authType, paramsModel);
   }
 
-  private savedParams(agentId: string, { scope, route, paramsModel }: ResolvedRoute) {
-    return this.modelParams.get(agentId, scope, route.provider, route.authType, paramsModel);
+  // Saved under the route's model id as configured, the key the dashboard uses too.
+  private savedParams(agentId: string, { scope, route }: ResolvedRoute) {
+    return this.modelParams.get(agentId, scope, route.provider, route.authType, route.model);
   }
 
   private async view(

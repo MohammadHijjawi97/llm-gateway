@@ -210,7 +210,7 @@ describe('RouteModelParamsService.get', () => {
 describe('RouteModelParamsService Anthropic short ids', () => {
   const DOTTED = { provider: 'anthropic', authType: 'api_key', model: 'claude-sonnet-4.5' };
 
-  it('reads and writes under the dashed id the proxy looks params up under', async () => {
+  it('saves under the configured id, like the dashboard, and reads specs under the dashed id', async () => {
     const { service, modelParams, specs } = setup({
       tiers: [
         { tier: 'default', override_route: DOTTED, auto_assigned_route: null, fallback_routes: [] },
@@ -224,7 +224,7 @@ describe('RouteModelParamsService Anthropic short ids', () => {
       'tier:default',
       'anthropic',
       'api_key',
-      'claude-sonnet-4-5',
+      'claude-sonnet-4.5',
     );
 
     modelParams.get.mockResolvedValue({ temperature: 1 });
@@ -234,7 +234,7 @@ describe('RouteModelParamsService Anthropic short ids', () => {
       'tier:default',
       'anthropic',
       'api_key',
-      'claude-sonnet-4-5',
+      'claude-sonnet-4.5',
     );
   });
 });
