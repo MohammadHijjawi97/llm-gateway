@@ -979,6 +979,8 @@ describe('ProxyService — orchestration', () => {
     let healingClient: { heal: jest.Mock; reportOutcome: jest.Mock };
 
     beforeEach(() => {
+      // clearAllMocks keeps implementations; start each test from a clean peek.
+      mockedPeek.mockReset();
       healingClient = {
         heal: jest.fn().mockResolvedValue({
           status: 'patched',

@@ -200,7 +200,7 @@ describe('peekStream', () => {
     // The healed Autofix retry is warmed up once, then proxyRequest warms up
     // the returned stream again: the buffered first chunk must satisfy it.
     const enc = new TextEncoder();
-    const first = await peekStream(makeStream([enc.encode('a'), enc.encode('b')]), 1_000);
+    const first = await peekStream(makeStream([enc.encode('a'), enc.encode('b')], 500), 1_000);
     if (!first.ok) throw new Error('first peek failed');
 
     const second = await peekStream(first.stream, 10);
