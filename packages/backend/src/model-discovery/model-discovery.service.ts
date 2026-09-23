@@ -432,11 +432,13 @@ export class ModelDiscoveryService {
     }
 
     if (providers[0].provider.startsWith('custom:')) {
-      const previousCount = Math.max(
-        ...providers.map((provider) =>
-          Array.isArray(provider.cached_models) ? provider.cached_models.length : 0,
-        ),
-      );
+      // A custom provider's models live on its custom_providers row, entered by
+      // hand. The connection row's discovery cache is never filled, so report
+      // the real list rather than a 0 that reads like a wiped catalog.
+      const custom = await this.customProviderRepo.findOne({
+        where: { id: providers[0].provider.slice('custom:'.length), tenant_id: tenantId },
+      });
+      const modelCount = Array.isArray(custom?.models) ? custom.models.length : 0;
       const previousFetchedAt = providers
         .map((provider) => provider.models_fetched_at)
         .filter((value): value is string => value !== null)
@@ -444,7 +446,7 @@ export class ModelDiscoveryService {
         .pop();
       return {
         ok: false,
-        model_count: previousCount,
+        model_count: modelCount,
         last_fetched_at: previousFetchedAt ?? null,
         error: 'Custom providers are managed manually — edit the provider to update its model list',
       };

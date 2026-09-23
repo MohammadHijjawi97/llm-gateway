@@ -295,6 +295,45 @@ describe('MCP tools', () => {
       expect(data).toMatchObject({ connections: [{ cached_model_count: 1 }] });
     });
 
+    it('counts a custom connection by the models entered on its custom provider', async () => {
+      const deps = makeDeps();
+      (deps.providers.getProviders as jest.Mock).mockResolvedValue([
+        CONNECTION,
+        { ...CONNECTION, id: 'conn-2', provider: 'custom:c1', cached_models: null },
+      ]);
+      (deps.customProviders.list as jest.Mock).mockResolvedValue([
+        {
+          id: 'c1',
+          name: 'cp',
+          alias: 'cp',
+          base_url: 'http://x',
+          models: [{ model_name: 'a' }, { model_name: 'b' }],
+        },
+        { id: 'c2', name: 'empty', alias: 'empty', base_url: 'http://y', models: null },
+      ]);
+      const tools = registerAll(deps);
+
+      const { data } = await call(tools, 'manifest_provider_list');
+      expect(data).toMatchObject({
+        connections: [{ cached_model_count: 1 }, { cached_model_count: 2 }],
+        custom_providers: [{ model_count: 2 }, { model_count: 0 }],
+      });
+
+      const refreshed = await call(tools, 'manifest_provider_refresh', { agent: 'demo' });
+      expect(refreshed.data).toMatchObject({
+        connections: [{ cached_model_count: 1 }, { cached_model_count: 2 }],
+      });
+    });
+
+    it('counts a connection with no discovery cache as empty', async () => {
+      const deps = makeDeps();
+      (deps.providers.getProviders as jest.Mock).mockResolvedValue([
+        { ...CONNECTION, cached_models: null },
+      ]);
+      const { data } = await call(registerAll(deps), 'manifest_provider_list');
+      expect(data).toMatchObject({ connections: [{ cached_model_count: 0 }] });
+    });
+
     it('returns the catalog', async () => {
       const { data } = await call(registerAll(makeDeps()), 'manifest_provider_catalog');
       expect((data as { providers: unknown[] }).providers.length).toBeGreaterThan(0);

@@ -656,19 +656,36 @@ describe('ModelDiscoveryService', () => {
       });
     });
 
-    it('refuses custom providers and reports the cached count', async () => {
+    it('refuses custom providers and reports the models entered by hand', async () => {
+      // The connection row's discovery cache stays empty for custom providers;
+      // reporting it read as a wiped catalog (#2962).
       providerRepo.find.mockResolvedValue([
         makeProvider({
           provider: 'custom:cp-1',
-          cached_models: [makeModel({ id: 'foo' }), makeModel({ id: 'bar' })],
+          cached_models: null,
           models_fetched_at: '2026-04-12T08:00:00.000Z',
         }),
       ]);
-      const result = await service.refreshProvider('agent-1', 'custom:cp-1');
+      customProviderRepo.findOne.mockResolvedValue({
+        id: 'cp-1',
+        models: [{ model_name: 'foo' }, { model_name: 'bar' }],
+      });
+      const result = await service.refreshProvider('tenant-1', 'custom:cp-1');
+      expect(customProviderRepo.findOne).toHaveBeenCalledWith({
+        where: { id: 'cp-1', tenant_id: 'tenant-1' },
+      });
       expect(result.ok).toBe(false);
       expect(result.model_count).toBe(2);
       expect(result.last_fetched_at).toBe('2026-04-12T08:00:00.000Z');
       expect(result.error).toContain('Custom providers are managed manually');
+    });
+
+    it('reports zero models when the custom provider row is gone', async () => {
+      providerRepo.find.mockResolvedValue([makeProvider({ provider: 'custom:cp-1' })]);
+      customProviderRepo.findOne.mockResolvedValue(null);
+      const result = await service.refreshProvider('tenant-1', 'custom:cp-1');
+      expect(result.model_count).toBe(0);
+      expect(result.last_fetched_at).toBeNull();
     });
 
     it('returns ok with the discovered count on success', async () => {
