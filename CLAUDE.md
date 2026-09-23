@@ -134,7 +134,6 @@ packages/
 │   │   ├── github/                          # GitHub stars endpoint
 │   │   ├── sse/                             # Server-Sent Events for real-time updates
 │   │   ├── setup/                           # First-run admin setup wizard
-│   │   ├── public-stats/                    # Public aggregate usage endpoints (opt-in)
 │   │   ├── free-models/                     # Free LLM model catalog
 │   │   ├── model-discovery/                 # Per-provider model fetching + fallback
 │   │   ├── billing/                         # Stripe billing status + plan limits
@@ -443,7 +442,7 @@ Every resource belongs to a tenant; users only authenticate and (optionally) app
 | POST                      | `/api/v1/routing/subscription-providers`        | Bearer (mnfst\_\*)                  | Subscription provider config                                                                                |
 | GET                       | `/api/v1/setup/status`                          | Public                              | First-run setup status                                                                                      |
 | POST                      | `/api/v1/setup/admin`                           | Public                              | Create initial admin user                                                                                   |
-| GET                       | `/api/v1/public/*`                              | Public (opt-in)                     | Aggregate public stats (controlled by `MANIFEST_PUBLIC_STATS`)                                              |
+| GET                       | `/api/v1/public/error-pages*`                   | Public (opt-in)                     | Published error pages for the marketing site (controlled by `MANIFEST_PUBLIC_STATS`)                        |
 | GET                       | `/v1/models`                                    | Bearer (mnfst\_\*)                  | Available model list (proxy)                                                                                |
 | POST                      | `/v1/chat/completions`                          | Bearer (mnfst\_\*)                  | LLM proxy (OpenAI-compatible)                                                                               |
 | POST                      | `/v1/responses`                                 | Bearer (mnfst\_\*)                  | LLM proxy (OpenAI Responses API)                                                                            |
@@ -506,7 +505,7 @@ See `packages/backend/.env.example` for all variables. Key ones:
 - `MANIFEST_MODE` — `selfhosted` or `cloud` (default: `cloud`; auto-detected as `selfhosted` inside Docker via `/.dockerenv` or Podman via `/run/.containerenv`). Self-hosted mode allows custom-provider URLs with `http://` / private IPs. `local` is accepted as a legacy alias for `selfhosted`.
 - `MANIFEST_TELEMETRY_DISABLED` — Set `1` to opt out of anonymous telemetry (self-hosted only).
 - `MANIFEST_UPDATE_CHECK_DISABLED` — Set `1` to stop the self-hosted dashboard's daily "new version available" check against GitHub Releases (`GET /api/v1/version`, `version/` module). Separate from the telemetry opt-out: air-gapped installs want no outbound calls at all. Never runs in cloud mode.
-- `MANIFEST_PUBLIC_STATS` — Set `true` to expose `/api/v1/public/*` aggregate stats without auth (cloud-only marketing use).
+- `MANIFEST_PUBLIC_STATS` — Set `true` to serve the published error pages at `/api/v1/public/error-pages*` without auth (cloud-only marketing use). The name predates the removal of the aggregate usage endpoints; it is kept so existing deployments stay on.
 - `CRM_METRICS_SECRET` — Cloud only. Shared secret for `GET /api/v1/internal/crm-metrics*` (healed-user cohort; the response carries counts only, no provider breakdown — that join cost 1.1s against the route's 1.5s `statement_timeout` at a wide window), sent in the `x-internal-secret` header. Empty by default and anything under 32 chars counts as unset, because this is the only route that exports user email addresses across tenants. Separate from `ERROR_PAGE_PUSH_SECRET` on purpose: different consumer, different credential. Self-hosted installs never register the module and migration `1802200000000` skips its index there, so the feature leaves no trace on their schema or routes.
 - `TELEMETRY_ENDPOINT` — Where self-hosted installs POST the anonymous usage report. Default: `https://telemetry.manifest.build/v1/report`. See [Telemetry](#anonymous-usage-telemetry-self-hosted).
 - `DISCOVERY_ENDPOINT` — Optional override for the discovery submission endpoint. Default: `https://blue.manifest.build/v1/self-hosted/discovery`.

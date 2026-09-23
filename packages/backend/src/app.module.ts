@@ -27,7 +27,6 @@ import { CommonModule } from './common/common.module';
 import { SseModule } from './sse/sse.module';
 import { GithubModule } from './github/github.module';
 import { VersionModule } from './version/version.module';
-import { PublicStatsModule } from './public-stats/public-stats.module';
 import { ErrorPagesModule } from './error-pages/error-pages.module';
 import { SetupModule } from './setup/setup.module';
 import { FreeModelsModule } from './free-models/free-models.module';
@@ -114,7 +113,6 @@ const mcpImports = mcpAvailability().enabled ? [McpModule] : [];
     SseModule,
     GithubModule,
     VersionModule,
-    PublicStatsModule,
     ErrorPagesModule,
     SetupModule,
     FreeModelsModule,
