@@ -152,10 +152,16 @@ describe('AgentEnabledProvidersController', () => {
     ])('applies the deleted_at filter in %s', async (_name, call) => {
       const { controller, agentRepo } = makeController({
         tenantProviderRepo: {
-          findOne: jest.fn().mockResolvedValue({ id: PROVIDER_ID, tenant_id: TENANT_ID }),
+          findOne: jest.fn().mockResolvedValue({
+            id: PROVIDER_ID,
+            tenant_id: TENANT_ID,
+            provider: 'openai',
+            auth_type: 'api_key',
+            cached_models: [],
+          } as Partial<TenantProvider>),
         },
       });
-      await call(controller).catch(() => undefined);
+      await call(controller);
       expect(agentRepo.findOne).toHaveBeenCalledWith({
         where: expect.objectContaining({ name: 'repro', deleted_at: IsNull() }),
       });
