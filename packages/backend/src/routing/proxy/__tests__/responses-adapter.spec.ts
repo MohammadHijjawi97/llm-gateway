@@ -722,6 +722,20 @@ describe('Responses adapter', () => {
       });
     });
 
+    it('reports cached input from a top-level cached_tokens key', () => {
+      const result = fromChatCompletionResponse(
+        {
+          choices: [{ message: { content: 'hi' } }],
+          usage: { prompt_tokens: 100, completion_tokens: 5, cached_tokens: 40 },
+        },
+        'm',
+      );
+
+      expect(result.usage).toMatchObject({
+        input_tokens_details: { cached_tokens: 40, cache_write_tokens: 0 },
+      });
+    });
+
     it.each([
       ['top-level cache_creation_tokens', { cache_creation_tokens: 12 }],
       ['top-level cache_creation_input_tokens', { cache_creation_input_tokens: 12 }],
