@@ -688,6 +688,40 @@ describe('Responses adapter', () => {
       });
     });
 
+    it('maps OpenAI-compatible cache and reasoning usage details', () => {
+      const openai = fromChatCompletionResponse(
+        {
+          choices: [{ message: { content: 'hi' } }],
+          usage: {
+            prompt_tokens: 1000,
+            completion_tokens: 50,
+            total_tokens: 1050,
+            prompt_tokens_details: { cached_tokens: 800 },
+            completion_tokens_details: { reasoning_tokens: 30 },
+          },
+        },
+        'm',
+      );
+      const deepseek = fromChatCompletionResponse(
+        {
+          choices: [{ message: { content: 'hi' } }],
+          usage: { prompt_tokens: 100, completion_tokens: 5, prompt_cache_hit_tokens: 64 },
+        },
+        'm',
+      );
+
+      expect(openai.usage).toEqual({
+        input_tokens: 1000,
+        input_tokens_details: { cached_tokens: 800, cache_write_tokens: 0 },
+        output_tokens: 50,
+        output_tokens_details: { reasoning_tokens: 30 },
+        total_tokens: 1050,
+      });
+      expect(deepseek.usage).toMatchObject({
+        input_tokens_details: { cached_tokens: 64, cache_write_tokens: 0 },
+      });
+    });
+
     it('handles missing choices, non-string content, and missing usage', () => {
       const result = fromChatCompletionResponse({ choices: [{ message: { content: 7 } }] }, 'm');
       expect(result.model).toBe('m');
