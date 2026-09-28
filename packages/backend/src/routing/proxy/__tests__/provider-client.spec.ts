@@ -1,5 +1,6 @@
 import { Buffer } from 'node:buffer';
 import { ProviderClient } from '../provider-client';
+import { fromChatCompletionResponse } from '../responses-adapter';
 import { ManifestError } from '../../../common/errors/manifest-error';
 import { buildCustomEndpoint, buildEndpointOverride } from '../provider-endpoints';
 import { ThinkingBlockCache, type ThinkingBlockRouteContext } from '../thinking-block-cache';
@@ -1520,7 +1521,22 @@ describe('ProviderClient', () => {
 
       const sent = JSON.parse(mockFetch.mock.calls[0][1].body);
       expect(sent.tool_choice).toEqual({ type: 'tool', name: 'lookup_patient' });
-      expect(result.structuredOutputToolName).toBeUndefined();
+
+      const chat = client.convertAnthropicResponse(
+        {
+          content: [{ type: 'tool_use', id: 'toolu_1', name: 'lookup_patient', input: { id: 7 } }],
+          stop_reason: 'tool_use',
+          usage: { input_tokens: 10, output_tokens: 5 },
+        },
+        'claude-sonnet-4-5-20250929',
+      );
+      const response = fromChatCompletionResponse(chat, 'claude-sonnet-4-5-20250929', {
+        structuredOutputToolName: result.structuredOutputToolName,
+        textFormat: result.responsesTextFormat,
+      });
+      expect(response.output).toEqual([
+        expect.objectContaining({ type: 'function_call', name: 'lookup_patient' }),
+      ]);
     });
 
     it('forwards Responses image inputs to Anthropic image content blocks', async () => {
