@@ -81,8 +81,6 @@ export interface ForwardResult {
    * passing the inner body to the standard Google converters.
    */
   isCodeAssist?: boolean;
-  /** Internal: Anthropic synthetic tool used to emulate Responses structured output. */
-  structuredOutputToolName?: string;
   /** Internal: original Responses text.format metadata for synthesized Responses bodies. */
   responsesTextFormat?: Record<string, unknown>;
   responsesToolNames?: ResponsesToolNames;
@@ -115,7 +113,6 @@ interface BuiltProviderRequest {
   url: string;
   headers: Record<string, string>;
   requestBody: Record<string, unknown>;
-  structuredOutputToolName?: string;
 }
 
 /**
@@ -417,7 +414,7 @@ export class ProviderClient {
           opts.apiMode === 'responses' ? responsesToolNames(body.tools) : undefined,
       };
     }
-    const { url, headers, requestBody, structuredOutputToolName } = this.buildRequest({
+    const { url, headers, requestBody } = this.buildRequest({
       endpoint,
       endpointKey,
       provider,
@@ -479,7 +476,6 @@ export class ProviderClient {
         isChatGpt,
         isResponses,
         isCodeAssist,
-        structuredOutputToolName,
         responsesTextFormat: textFormat,
         responsesToolNames:
           opts.apiMode === 'responses' ? responsesToolNames(body.tools) : undefined,
@@ -915,7 +911,6 @@ export class ProviderClient {
       isChatGpt: boolean;
       isResponses?: boolean;
       isCodeAssist?: boolean;
-      structuredOutputToolName?: string;
       responsesTextFormat?: Record<string, unknown>;
       responsesToolNames?: ResponsesToolNames;
     },
