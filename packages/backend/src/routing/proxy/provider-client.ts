@@ -228,23 +228,6 @@ function responsesTextFormat(
   return out;
 }
 
-function isStructuredResponseFormat(responseFormat: unknown): boolean {
-  return (
-    isRecord(responseFormat) &&
-    (responseFormat.type === 'json_object' || responseFormat.type === 'json_schema')
-  );
-}
-
-function structuredOutputToolName(
-  requestSource: Record<string, unknown>,
-  requestBody: Record<string, unknown>,
-): string | undefined {
-  if (!isStructuredResponseFormat(requestSource.response_format)) return undefined;
-  const toolChoice = requestBody.tool_choice;
-  if (!isRecord(toolChoice) || toolChoice.type !== 'tool') return undefined;
-  return typeof toolChoice.name === 'string' ? toolChoice.name : undefined;
-}
-
 function buildPromptCacheKey(sessionKey: string): string {
   const digest = createHash('sha256').update(sessionKey).digest('hex').slice(0, 32);
   return `manifest-${digest}`;
@@ -759,10 +742,6 @@ export class ProviderClient {
               thinkingLookup: ctx.thinkingLookup,
               thinkingRouteContext,
             });
-      const syntheticToolName =
-        ctx.apiMode === 'responses'
-          ? structuredOutputToolName(requestSource, requestBody)
-          : undefined;
       requestBody.model = bareModel;
       if (stream) requestBody.stream = true;
       if (shouldApplyAnthropicAutomaticCacheControl(endpointKey)) {
@@ -789,7 +768,6 @@ export class ProviderClient {
             : undefined,
         ),
         requestBody,
-        structuredOutputToolName: syntheticToolName,
       };
     }
 

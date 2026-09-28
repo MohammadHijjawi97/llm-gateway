@@ -1497,6 +1497,32 @@ describe('ProviderClient', () => {
       expect(result.responsesTextFormat).toBeUndefined();
     });
 
+    it('keeps a forced client tool as a tool call on structured Responses routed to Anthropic', async () => {
+      mockFetch.mockResolvedValue(new Response('{}', { status: 200 }));
+
+      const result = await client.forward({
+        provider: 'anthropic',
+        apiKey: 'sk-ant-test',
+        model: 'claude-sonnet-4-5-20250929',
+        body: {
+          input: 'Look up the patient.',
+          text: { format: { type: 'json_object' } },
+        },
+        resolveChatBody: async () => ({
+          messages: [{ role: 'user', content: 'Look up the patient.' }],
+          tools: [{ type: 'function', function: { name: 'lookup_patient', parameters: {} } }],
+          tool_choice: { type: 'function', function: { name: 'lookup_patient' } },
+          response_format: { type: 'json_object' },
+        }),
+        stream: false,
+        apiMode: 'responses',
+      });
+
+      const sent = JSON.parse(mockFetch.mock.calls[0][1].body);
+      expect(sent.tool_choice).toEqual({ type: 'tool', name: 'lookup_patient' });
+      expect(result.structuredOutputToolName).toBeUndefined();
+    });
+
     it('forwards Responses image inputs to Anthropic image content blocks', async () => {
       mockFetch.mockResolvedValue(new Response('{}', { status: 200 }));
 
