@@ -722,6 +722,31 @@ describe('Responses adapter', () => {
       });
     });
 
+    it.each([
+      ['top-level cache_creation_tokens', { cache_creation_tokens: 12 }],
+      ['top-level cache_creation_input_tokens', { cache_creation_input_tokens: 12 }],
+      [
+        'prompt_tokens_details.cache_write_tokens',
+        { prompt_tokens_details: { cache_write_tokens: 12 } },
+      ],
+      [
+        'prompt_tokens_details.cache_creation_input_tokens',
+        { prompt_tokens_details: { cache_creation_input_tokens: 12 } },
+      ],
+    ])('reports cache writes from %s', (_key, cacheUsage) => {
+      const result = fromChatCompletionResponse(
+        {
+          choices: [{ message: { content: 'hi' } }],
+          usage: { prompt_tokens: 100, completion_tokens: 5, ...cacheUsage },
+        },
+        'm',
+      );
+
+      expect(result.usage).toMatchObject({
+        input_tokens_details: { cached_tokens: 0, cache_write_tokens: 12 },
+      });
+    });
+
     it('handles missing choices, non-string content, and missing usage', () => {
       const result = fromChatCompletionResponse({ choices: [{ message: { content: 7 } }] }, 'm');
       expect(result.model).toBe('m');
