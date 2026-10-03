@@ -309,6 +309,29 @@ describe('chatgpt-adapter', () => {
       ).not.toHaveProperty('text');
     });
 
+    it('copies only the json_schema fields the caller set', () => {
+      const messages = [{ role: 'user', content: 'hi' }];
+
+      expect(
+        toResponsesRequest(
+          { messages, response_format: { type: 'json_schema', json_schema: {} } },
+          'gpt-5-codex',
+        ).text,
+      ).toEqual({ format: { type: 'json_schema' } });
+      expect(
+        toResponsesRequest(
+          {
+            messages,
+            response_format: {
+              type: 'json_schema',
+              json_schema: { name: 'place', schema: {}, description: '' },
+            },
+          },
+          'gpt-5-codex',
+        ).text,
+      ).toEqual({ format: { type: 'json_schema', name: 'place', schema: {} } });
+    });
+
     it('prefers an explicit Responses-style text object over response_format', () => {
       const text = { format: { type: 'json_object' }, verbosity: 'low' };
       const body = {
