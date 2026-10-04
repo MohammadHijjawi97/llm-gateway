@@ -84,6 +84,67 @@ describe('Google Adapter', () => {
       });
     });
 
+    it('maps max_completion_tokens to maxOutputTokens', () => {
+      const body = {
+        messages: [{ role: 'user', content: 'Hi' }],
+        max_completion_tokens: 500,
+      };
+      const result = toGoogleRequest(body, 'gemini-2.5-flash');
+
+      expect(result.generationConfig).toEqual({ maxOutputTokens: 500 });
+    });
+
+    it('prefers max_tokens when max_completion_tokens is also sent', () => {
+      const body = {
+        messages: [{ role: 'user', content: 'Hi' }],
+        max_tokens: 1000,
+        max_completion_tokens: 500,
+      };
+      const result = toGoogleRequest(body, 'gemini-2.5-flash');
+
+      expect(result.generationConfig).toEqual({ maxOutputTokens: 1000 });
+    });
+
+    it('maps a stop array to stopSequences', () => {
+      const body = {
+        messages: [{ role: 'user', content: 'Hi' }],
+        stop: ['\n\n', 'END'],
+      };
+      const result = toGoogleRequest(body, 'gemini-2.5-flash');
+
+      expect(result.generationConfig).toEqual({ stopSequences: ['\n\n', 'END'] });
+    });
+
+    it('wraps a bare stop string in stopSequences', () => {
+      const body = {
+        messages: [{ role: 'user', content: 'Hi' }],
+        stop: 'END',
+      };
+      const result = toGoogleRequest(body, 'gemini-2.5-flash');
+
+      expect(result.generationConfig).toEqual({ stopSequences: ['END'] });
+    });
+
+    it('omits stopSequences for an empty or null stop', () => {
+      for (const stop of ['', [], null]) {
+        const body = { messages: [{ role: 'user', content: 'Hi' }], stop };
+        const result = toGoogleRequest(body, 'gemini-2.5-flash');
+
+        expect(result.generationConfig).toBeUndefined();
+      }
+    });
+
+    it('lets stop override a native generationConfig.stopSequences', () => {
+      const body = {
+        messages: [{ role: 'user', content: 'Hi' }],
+        generationConfig: { stopSequences: ['STOP'] },
+        stop: ['END'],
+      };
+      const result = toGoogleRequest(body, 'gemini-2.5-flash');
+
+      expect(result.generationConfig).toEqual({ stopSequences: ['END'] });
+    });
+
     it('preserves native Google generationConfig params', () => {
       const body = {
         messages: [{ role: 'user', content: 'Hi' }],

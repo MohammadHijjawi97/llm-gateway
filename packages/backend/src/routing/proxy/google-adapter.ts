@@ -416,9 +416,19 @@ export function toGoogleRequest(
   const genConfig: Record<string, unknown> = isRecord(body.generationConfig)
     ? cloneRecord(body.generationConfig)
     : {};
-  if (body.max_tokens !== undefined) genConfig.maxOutputTokens = body.max_tokens;
+  // OpenAI SDKs send the output cap as `max_completion_tokens` (the
+  // replacement for the deprecated `max_tokens`); accept either.
+  const maxTokens = body.max_tokens ?? body.max_completion_tokens;
+  if (maxTokens !== undefined) genConfig.maxOutputTokens = maxTokens;
   if (body.temperature !== undefined) genConfig.temperature = body.temperature;
   if (body.top_p !== undefined) genConfig.topP = body.top_p;
+  // chat_completions `stop` accepts a string or string[]; Gemini
+  // `stopSequences` is always an array.
+  if (Array.isArray(body.stop) && body.stop.length > 0) {
+    genConfig.stopSequences = body.stop;
+  } else if (typeof body.stop === 'string' && body.stop) {
+    genConfig.stopSequences = [body.stop];
+  }
   applyResponseFormatToGenerationConfig(genConfig, body.response_format);
   if (Object.keys(genConfig).length > 0) result.generationConfig = genConfig;
 
