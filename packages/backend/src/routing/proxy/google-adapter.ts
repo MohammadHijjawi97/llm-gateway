@@ -423,11 +423,14 @@ export function toGoogleRequest(
   if (body.temperature !== undefined) genConfig.temperature = body.temperature;
   if (body.top_p !== undefined) genConfig.topP = body.top_p;
   // chat_completions `stop` accepts a string or string[]; Gemini
-  // `stopSequences` is always an array.
+  // `stopSequences` is always an array. An explicit empty `stop` ([] or '')
+  // means "no stop sequences", so it also clears native ones.
   if (Array.isArray(body.stop) && body.stop.length > 0) {
     genConfig.stopSequences = body.stop;
   } else if (typeof body.stop === 'string' && body.stop) {
     genConfig.stopSequences = [body.stop];
+  } else if (Array.isArray(body.stop) || body.stop === '') {
+    delete genConfig.stopSequences;
   }
   applyResponseFormatToGenerationConfig(genConfig, body.response_format);
   if (Object.keys(genConfig).length > 0) result.generationConfig = genConfig;

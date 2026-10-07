@@ -105,6 +105,17 @@ describe('Google Adapter', () => {
       expect(result.generationConfig).toEqual({ maxOutputTokens: 1000 });
     });
 
+    it('lets max_completion_tokens override a native generationConfig.maxOutputTokens', () => {
+      const body = {
+        messages: [{ role: 'user', content: 'Hi' }],
+        generationConfig: { maxOutputTokens: 2000 },
+        max_completion_tokens: 500,
+      };
+      const result = toGoogleRequest(body, 'gemini-2.5-flash');
+
+      expect(result.generationConfig).toEqual({ maxOutputTokens: 500 });
+    });
+
     it('maps a stop array to stopSequences', () => {
       const body = {
         messages: [{ role: 'user', content: 'Hi' }],
@@ -143,6 +154,30 @@ describe('Google Adapter', () => {
       const result = toGoogleRequest(body, 'gemini-2.5-flash');
 
       expect(result.generationConfig).toEqual({ stopSequences: ['END'] });
+    });
+
+    it('lets an explicit empty stop clear a native generationConfig.stopSequences', () => {
+      for (const stop of ['', []]) {
+        const body = {
+          messages: [{ role: 'user', content: 'Hi' }],
+          generationConfig: { topK: 40, stopSequences: ['STOP'] },
+          stop,
+        };
+        const result = toGoogleRequest(body, 'gemini-2.5-flash');
+
+        expect(result.generationConfig).toEqual({ topK: 40 });
+      }
+    });
+
+    it('keeps a native generationConfig.stopSequences when stop is null', () => {
+      const body = {
+        messages: [{ role: 'user', content: 'Hi' }],
+        generationConfig: { stopSequences: ['STOP'] },
+        stop: null,
+      };
+      const result = toGoogleRequest(body, 'gemini-2.5-flash');
+
+      expect(result.generationConfig).toEqual({ stopSequences: ['STOP'] });
     });
 
     it('preserves native Google generationConfig params', () => {
